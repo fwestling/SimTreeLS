@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CAT <<END
+cat <<END
 <?xml version='1.0' ?>
 
 <arbaro>

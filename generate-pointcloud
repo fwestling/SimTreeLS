@@ -13,252 +13,252 @@ function error
 }
 
 function sample_sensor() {
-  # echo "ARGS: $@" >&2
-  PC=$1
-  shift
-  threshold=$1
-  shift
-  SENSOR=$1
-  shift
-
-  echo -n "." >&2
-  i=0
-  for line in $@
-  do
-  	ts=$(echo $line | cut -d, -f1)
-  	frame=$(echo $line | cut -d, -f2-7)
-  	center=$(echo $line | cut -d, -f2-4)
-    # criteria=$(echo $line | cut -d, -f8- |
-  	# 	sed -r 's/([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+)/x;from=\1;to=\2 y;from=\3;to=\4 z;from=\5;to=\6/')
-  	i=`expr $i + 1`
-  	cat $SENSOR |
-  		points-frame --from=$frame --binary=ui,7d --fields=,,x,y,z |
-  		points-frame --from=$frame --binary=ui,7d --fields=,,,,,x,y,z |
-  		csv-paste "-;binary=ui,7d" "value=$i;binary=ui"
-      #		points-join --binary=ui,7d --fields=,,x,y,z --radius=0.05 <(cat $PC | csv-select --binary=3d,2ui --fields=x,y,z $criteria)";binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
-      	# points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
-  done |
-  	points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null |
-  	points-calc distance --binary=ui,7d,ui,3d,2ui --fields=,,first,second |
-  	points-calc distance --binary=ui,7d,ui,3d,2ui,d --fields=,,first,,,,,second |
-  	points-calc distance --binary=ui,7d,ui,3d,2ui,2d --fields=,,,,,first,,second |
-  	csv-shuffle --binary=ui,7d,ui,3d,2ui,3d --fields=i,r,,,,,,,uid,x,y,z,cl,seg,d1,d2,d3 -o=uid,i,r,x,y,z,d1,d2,d3,cl,seg |
-  	csv-eval --binary=2ui,d,3d,3d,2ui --fields=,,,,,,a,b,c "d=where(abs(b+c-a) < $threshold,1,0)" --output-format=ui |
-  	csv-select --binary=2ui,d,3d,3d,3ui --fields=,,,,,,,,,,,d "d;equals=1" |
-  	csv-shuffle --binary=2ui,d,3d,3d,3ui --fields=uid,i,r,x,y,z,,,,cl,seg -o=uid,i,r,x,y,z,cl,seg |
-  	csv-sort --binary=2ui,d,3d,2ui --fields=id,id,r --min |
-  	csv-shuffle --binary=2ui,d,3d,2ui --fields=,i,r,x,y,z,cl,seg -o=i,r,x,y,z,cl,seg
+    # echo "ARGS: $@" >&2
+    PC=$1
+    shift
+    threshold=$1
+    shift
+    SENSOR=$1
+    shift
+    
+    echo -n "." >&2
+    i=0
+    for line in $@
+    do
+        ts=$(echo $line | cut -d, -f1)
+        frame=$(echo $line | cut -d, -f2-7)
+        center=$(echo $line | cut -d, -f2-4)
+        # criteria=$(echo $line | cut -d, -f8- |
+        # 	sed -r 's/([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+)/x;from=\1;to=\2 y;from=\3;to=\4 z;from=\5;to=\6/')
+        i=`expr $i + 1`
+        cat $SENSOR |
+        points-frame --from=$frame --binary=ui,7d --fields=,,x,y,z |
+        points-frame --from=$frame --binary=ui,7d --fields=,,,,,x,y,z |
+        csv-paste "-;binary=ui,7d" "value=$i;binary=ui"
+        #		points-join --binary=ui,7d --fields=,,x,y,z --radius=0.05 <(cat $PC | csv-select --binary=3d,2ui --fields=x,y,z $criteria)";binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
+        # points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
+    done |
+    points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null |
+    points-calc distance --binary=ui,7d,ui,3d,2ui --fields=,,first,second |
+    points-calc distance --binary=ui,7d,ui,3d,2ui,d --fields=,,first,,,,,second |
+    points-calc distance --binary=ui,7d,ui,3d,2ui,2d --fields=,,,,,first,,second |
+    csv-shuffle --binary=ui,7d,ui,3d,2ui,3d --fields=i,r,,,,,,,uid,x,y,z,cl,seg,d1,d2,d3 -o=uid,i,r,x,y,z,d1,d2,d3,cl,seg |
+    csv-eval --binary=2ui,d,3d,3d,2ui --fields=,,,,,,a,b,c "d=where(abs(b+c-a) < $threshold,1,0)" --output-format=ui |
+    csv-select --binary=2ui,d,3d,3d,3ui --fields=,,,,,,,,,,,d "d;equals=1" |
+    csv-shuffle --binary=2ui,d,3d,3d,3ui --fields=uid,i,r,x,y,z,,,,cl,seg -o=uid,i,r,x,y,z,cl,seg |
+    csv-sort --binary=2ui,d,3d,2ui --fields=id,id,r --min |
+    csv-shuffle --binary=2ui,d,3d,2ui --fields=,i,r,x,y,z,cl,seg -o=i,r,x,y,z,cl,seg
     [[ $verbose ]] && echo "$i" >&2
 }
 
 # TODO: Add gaussian noise to these points.
 function make_ground() {
-  sizeX=$1
-  sizeY=$2
-  res=$3
-  [[ $verbose ]] && echo "Making ground" >&2
-  for x in `seq 0 $res $sizeX`
-  do
-    seq 0 $res $sizeY | xargs -n1 -P8 -i bash -c "echo $x,{},0.1,0"
-  done | csv-to-bin 3d,ui |
+    sizeX=$1
+    sizeY=$2
+    res=$3
+    [[ $verbose ]] && echo "Making ground" >&2
+    for x in `seq 0 $res $sizeX`
+    do
+        seq 0 $res $sizeY | xargs -n1 -P8 -i bash -c "echo $x,{},0.1,0"
+    done | csv-to-bin 3d,ui |
     csv-eval --binary=3d,ui --fields=x,y,z,i "x=x-$sizeX/2;y=y-$sizeY/2"
 }
 
 
 function go_sensor() {
-  ARBARO=$1
-  TRAJ=$2
-  SENSOR=$3
-  GROUND=`mktemp`
-  ref_frame=$4
-  sizeX=$5
-  sizeY=$6
-  noise=$7
-
-  size=$(cat $SENSOR | csv-from-bin ui,7d | wc -l | csv-eval --fields=x "x=x*2" --format=ui)
-
-  # sizeBounds=$(cat $TRAJ | csv-calc min,max --fields=,x,y --format=t,7d |
-  #   csv-eval --format=2d --fields=minX,minY,maxX,maxY "x=maxX-minX+2;y=maxY-minY+2" |
-  #   csv-shuffle --fields=,,,,x,y -o=x,y)
-  # meanX=$(cat $TRAJ | csv-calc mean --fields=,x --format=t,7d)
-  # meanY=$(cat $TRAJ | csv-calc mean --fields=,,y --format=t,7d)
-
-  cat <(make_ground $sizeX $sizeY 0.5) <(make_ground 1 1 0.1) |
+    ARBARO=$1
+    TRAJ=$2
+    SENSOR=$3
+    GROUND=`mktemp`
+    ref_frame=$4
+    sizeX=$5
+    sizeY=$6
+    noise=$7
+    
+    size=$(cat $SENSOR | csv-from-bin ui,7d | wc -l | csv-eval --fields=x "x=x*2" --format=ui)
+    
+    # sizeBounds=$(cat $TRAJ | csv-calc min,max --fields=,x,y --format=t,7d |
+    #   csv-eval --format=2d --fields=minX,minY,maxX,maxY "x=maxX-minX+2;y=maxY-minY+2" |
+    #   csv-shuffle --fields=,,,,x,y -o=x,y)
+    # meanX=$(cat $TRAJ | csv-calc mean --fields=,x --format=t,7d)
+    # meanY=$(cat $TRAJ | csv-calc mean --fields=,,y --format=t,7d)
+    
+    cat <(make_ground $sizeX $sizeY 0.5) <(make_ground 1 1 0.1) |
     # csv-eval --binary=3d,ui --fields=x,y,z "x=x+$radX;y=y+$radY" >$GROUND
     points-frame --binary=3d,ui --fields=x,y,z --from=$ref_frame > $GROUND
-  cat $TRAJ |
+    cat $TRAJ |
     math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
     csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=x,y,z,roll,pitch,yaw |
     while read frame
     do
-      cat $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
-       points-frame --binary=ui,7d --from=$frame --fields=,,,,,x,y,z
-     done | #csv-paste "-" "line-number" | csv-time --from=seconds --to=iso --fields=,,,,,,,t |
-     #csv-from-bin 7d | csv-play --speed 100 | # --fields=,,,,,,,t |
-     # points-frame --to $ref_frame --binary=ui,7d --fields=,,x,y,z |
-     # points-frame --to $ref_frame --binary=ui,7d --fields=,,,,,x,y,z |
-     # view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" <(cat $TRAJ | points-frame --fields=,x,y,z --to=$ref_frame)";fields=,x,y,z;colour=red"
-     view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" "$TRAJ;fields=,x,y,z;colour=red;weight=4" "$TEMPDIR/substand.bin;binary=3d,2ui;fields=x,y,z,scalar;colour=0:3,green:orange;size=11000000"
-
-  rm $GROUND
+        cat $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
+        points-frame --binary=ui,7d --from=$frame --fields=,,,,,x,y,z
+    done | #csv-paste "-" "line-number" | csv-time --from=seconds --to=iso --fields=,,,,,,,t |
+    #csv-from-bin 7d | csv-play --speed 100 | # --fields=,,,,,,,t |
+    # points-frame --to $ref_frame --binary=ui,7d --fields=,,x,y,z |
+    # points-frame --to $ref_frame --binary=ui,7d --fields=,,,,,x,y,z |
+    # view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" <(cat $TRAJ | points-frame --fields=,x,y,z --to=$ref_frame)";fields=,x,y,z;colour=red"
+    view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" "$TRAJ;fields=,x,y,z;colour=red;weight=4" "$TEMPDIR/substand.bin;binary=3d,2ui;fields=x,y,z,scalar;colour=0:3,green:orange;size=11000000"
+    
+    rm $GROUND
 }
 
 function generate_tree() {
-  seed=$1
-  ARBARO=$2
-  DIR=$3
-  maxH=$4
-  minH=$5
-  verbose=$6
-  density=20000
-
-  mkdir -p temp_$seed
-  cd temp_$seed
-
-  OBJ=$DIR/$seed.obj
-
-  [[ $verbose ]] && echo -n . >&2
-
-	java -jar /home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q $ARBARO 2>/dev/null
-
-	cat $OBJ | grep "^v" > verts.csv
-
-	gLines=$(cat $OBJ | grep "^g" -n | sed 's/:g//' | sed -r 's/\s/:/g')
-	lines=$(cat $OBJ | wc -l)
-
-	id=$(cat $OBJ | grep "^g" -n | wc -l)
-
-	for group in `echo "$gLines"`
-	do
-		set=$(echo "$gLines" | grep $group -A 1 | tr '\n' ':' | sed 's/:$/\n/')
-		start=$(echo $set | cut -d: -f1)
-		label=$(echo $set | cut -d: -f2)
-		n=$(expr $lines - $start)
-
-		e=$(echo $set | cut -d: -f3)
-		if [[ $e ]]
-		then
-			end=$(expr $e - 1)
-			d=$(expr $end - $start)
-			cat verts.csv <(cat $OBJ | tail -$n | head -$d ) > $label.obj
-		else
-			cat verts.csv <(cat $OBJ | tail -$n) > $label.obj
-		fi
-		cloudcompare.CloudCompare -SILENT -NO_TIMESTAMP -C_EXPORT_FMT LAS -O $label.obj -SAMPLE_MESH DENSITY $density >/dev/null 2>/dev/null
-		cat ${label}_SAMPLED_POINTS.las | las-to-csv points | csv-shuffle -f=x,y,z -o=x,y,z | csv-paste "-" "value=$id"
-		id=$(expr $id - 1)
-	done | csv-to-bin 3d,ui |
-	  points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
+    seed=$1
+    ARBARO=$2
+    DIR=$3
+    maxH=$4
+    minH=$5
+    verbose=$6
+    density=20000
+    
+    mkdir -p temp_$seed
+    cd temp_$seed
+    
+    OBJ=$DIR/$seed.obj
+    
+    [[ $verbose ]] && echo -n . >&2
+    
+    $ARBARO | java -jar $( dirname "${BASH_SOURCE[0]}" )/arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q 2>/dev/null
+    
+    cat $OBJ | grep "^v" > verts.csv
+    
+    gLines=$(cat $OBJ | grep "^g" -n | sed 's/:g//' | sed -r 's/\s/:/g')
+    lines=$(cat $OBJ | wc -l)
+    
+    id=$(cat $OBJ | grep "^g" -n | wc -l)
+    
+    for group in `echo "$gLines"`
+    do
+        set=$(echo "$gLines" | grep $group -A 1 | tr '\n' ':' | sed 's/:$/\n/')
+        start=$(echo $set | cut -d: -f1)
+        label=$(echo $set | cut -d: -f2)
+        n=$(expr $lines - $start)
+        
+        e=$(echo $set | cut -d: -f3)
+        if [[ $e ]]
+        then
+            end=$(expr $e - 1)
+            d=$(expr $end - $start)
+            cat verts.csv <(cat $OBJ | tail -$n | head -$d ) > $label.obj
+        else
+            cat verts.csv <(cat $OBJ | tail -$n) > $label.obj
+        fi
+        cloudcompare.CloudCompare -SILENT -NO_TIMESTAMP -C_EXPORT_FMT LAS -O $label.obj -SAMPLE_MESH DENSITY $density >/dev/null 2>/dev/null
+        cat ${label}_SAMPLED_POINTS.las | las-to-csv points | csv-shuffle -f=x,y,z -o=x,y,z | csv-paste "-" "value=$id"
+        id=$(expr $id - 1)
+    done | csv-to-bin 3d,ui |
+    points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
     csv-select --binary=3d,ui --fields=x,y,z "z;greater=0" > $DIR/$seed.bin
-
-  ## Filtering!
-  size=$(cat $DIR/$seed.bin | csv-calc diameter --binary=3d,ui --fields=,,z | csv-from-bin d | cut -d. -f1)
-  [[ $size -gt $maxH ]] && rm $DIR/$seed.obj  # Too big to be realistic
-  [[ $size -gt $maxH ]] && rm $DIR/$seed.bin  # Too big to be realistic
-  [[ $size -lt $minH ]] && rm $DIR/$seed.obj   # Too small to be realistic
-  [[ $size -lt $minH ]] && rm $DIR/$seed.bin   # Too small to be realistic
-
-  cd ..
-  rm -rf temp_$seed
+    
+    ## Filtering!
+    size=$(cat $DIR/$seed.bin | csv-calc diameter --binary=3d,ui --fields=,,z | csv-from-bin d | cut -d. -f1)
+    [[ $size -gt $maxH ]] && rm $DIR/$seed.obj  # Too big to be realistic
+    [[ $size -gt $maxH ]] && rm $DIR/$seed.bin  # Too big to be realistic
+    [[ $size -lt $minH ]] && rm $DIR/$seed.obj   # Too small to be realistic
+    [[ $size -lt $minH ]] && rm $DIR/$seed.bin   # Too small to be realistic
+    
+    cd ..
+    rm -rf temp_$seed
 }
 
 function go() {
-  ARBARO=$1
-  TRAJ=$2
-  SENSOR=$3
-  sizeN=$4
-  sizeE=$5
-  spaceN=$6
-  spaceE=$7
-  method=$8
-  maxH=$9
-  minH=${10}
-  ref_frame=${11}
-  noise=${12}
-
-  radN=$(echo $sizeN | csv-eval --format=d --fields=x "x=x/2")
-  radE=$(echo $sizeE | csv-eval --format=d --fields=x "x=x/2")
-
-  species=$(cat $ARBARO | name-value-get "arbaro/species/<xmlattr>/name")
-
-  # ============ Generate trees in HD PC form ============ #
-  TREES="$TEMPDIR/${species}_trees"
-
-  mkdir -p $TREES
-
-  nTrees=$(echo $sizeN,$sizeE,$spaceN,$spaceE | csv-eval --fields=a,b,c,d "x=round((a/c)*(b/d)*2)" --format=4d | csv-shuffle --fields=,,,,x -o=x)
-  [[ $verbose ]] && echo "$nTrees trees needed" >&2
-  # Should XARGS this bit.
-  while [[ `ls $TREES | grep "\.bin" | wc -l` -lt $nTrees ]]
-  do
-    for i in `seq 8` ; do echo $RANDOM ; done |
-      xargs -n1 -P8 -i bash -c "$(declare -f) ; generate_tree {} $ARBARO $TREES $maxH $minH $verbose"
-  done
-  [[ $verbose ]] && echo "" >&2
-
-  [[ $verbose ]] && echo "$spaceN, $spaceE, $radN, $radE" >&2
-
-  # ================== Construct stand ================== #
-  points=$(if [[ $method == "orchard" ]]
-  then
-    for x in `seq 0 $spaceN $radN`
+    ARBARO=$1
+    TRAJ=$2
+    SENSOR=$3
+    sizeN=$4
+    sizeE=$5
+    spaceN=$6
+    spaceE=$7
+    method=$8
+    maxH=$9
+    minH=${10}
+    ref_frame=${11}
+    noise=${12}
+    
+    radN=$(echo $sizeN | csv-eval --format=d --fields=x "x=x/2")
+    radE=$(echo $sizeE | csv-eval --format=d --fields=x "x=x/2")
+    
+    species=$($ARBARO | name-value-get "arbaro/species/<xmlattr>/name")
+    
+    # ============ Generate trees in HD PC form ============ #
+    TREES="$TEMPDIR/${species}_trees"
+    
+    mkdir -p $TREES
+    
+    nTrees=$(echo $sizeN,$sizeE,$spaceN,$spaceE | csv-eval --fields=a,b,c,d "x=round((a/c)*(b/d)*2)" --format=4d | csv-shuffle --fields=,,,,x -o=x)
+    [[ $verbose ]] && echo "$nTrees trees needed" >&2
+    # Should XARGS this bit.
+    while [[ `ls $TREES | grep "\.bin" | wc -l` -lt $nTrees ]]
     do
-      for y in `seq 0 $spaceE $radE` ; do echo "$x,$y,0.1" ; done
-      for y in `seq -$spaceE -$spaceE -$radE` ; do echo "$x,$y,0.1" ; done
+        for i in `seq 8` ; do echo $RANDOM ; done |
+        xargs -n1 -P8 -i bash -c "$(declare -f) ; generate_tree {} $ARBARO $TREES $maxH $minH $verbose"
     done
-    for x in `seq -$spaceN -$spaceN -$radN`
-    do
-      for y in `seq 0 $spaceE $radE` ; do echo "$x,$y,0.1" ; done
-      for y in `seq -$spaceE -$spaceE -$radE` ; do echo "$x,$y,0.1" ; done
-    done
-  elif [[ $method == "forest" ]]
-  then
-    echo "0,0,0"
-    error "Not yet implemented"
-  fi )
-
-  [[ $verbose ]] && echo "POINTS" >&2
-  [[ $verbose ]] && echo "$points" >&2
-
-  files=$(find $TREES | grep "\.bin$" | shuf | csv-paste "-" line-number)
-
-  echo "trunk/x,trunk/y,trunk/z,id" > $TEMPDIR/trunks.csv
-
-  [[ -f $TEMPDIR/ground.bin && ! $force ]] || make_ground $sizeN $sizeE 0.01 |
+    [[ $verbose ]] && echo "" >&2
+    
+    [[ $verbose ]] && echo "$spaceN, $spaceE, $radN, $radE" >&2
+    
+    # ================== Construct stand ================== #
+    points=$(if [[ $method == "orchard" ]]
+        then
+            for x in `seq 0 $spaceN $radN`
+            do
+                for y in `seq 0 $spaceE $radE` ; do echo "$x,$y,0.1" ; done
+                for y in `seq -$spaceE -$spaceE -$radE` ; do echo "$x,$y,0.1" ; done
+            done
+            for x in `seq -$spaceN -$spaceN -$radN`
+            do
+                for y in `seq 0 $spaceE $radE` ; do echo "$x,$y,0.1" ; done
+                for y in `seq -$spaceE -$spaceE -$radE` ; do echo "$x,$y,0.1" ; done
+            done
+        elif [[ $method == "forest" ]]
+        then
+            echo "0,0,0"
+            error "Not yet implemented"
+    fi )
+    
+    [[ $verbose ]] && echo "POINTS" >&2
+    [[ $verbose ]] && echo "$points" >&2
+    
+    files=$(find $TREES | grep "\.bin$" | shuf | csv-paste "-" line-number)
+    
+    echo "trunk/x,trunk/y,trunk/z,id" > $TEMPDIR/trunks.csv
+    
+    [[ -f $TEMPDIR/ground.bin && ! $force ]] || make_ground $sizeN $sizeE 0.01 |
     csv-paste "-;binary=3d,ui" "value=0;binary=ui" > $TEMPDIR/ground.bin
-
-  [[ $verbose ]] && echo "Ground finished" >&2
-
-  for pt in `echo $points | tr ' ' '\n' | csv-paste "-" line-number`
-  do
-  	point=$(echo $pt | cut -d, -f1-3)
-  	idx=$(echo $pt | cut -d, -f4)
-    # mIdx=$(echo $idx | csv-eval --format=d --fields=i "i=i%($nf+1")
-    tree=$(echo "$files" | grep ",$idx$" | cut -d, -f1)
-    seed=$(echo $tree | grep -o "[0-9]*\.bin" | cut -d. -f1)
-    echo "$point,$seed" >> $TEMPDIR/trunks.csv
-    cat $tree | points-frame --binary=3d,ui --fields=x,y,z,i --from "$point" |
-		  csv-paste "-;binary=3d,ui" "value=$seed;binary=ui"
-  done  |
-  cat $TEMPDIR/ground.bin - | #Now, just convert from NWU (generated) to TRAJ frame
-  # cat $TEMPDIR/ground.bin | #Now, just convert from NWU (generated) to TRAJ frame
-  points-frame --binary=3d,2ui --fields=x,y,z --from=$ref_frame > $TEMPDIR/stand.bin
-  [[ $verbose ]] && echo "Stand constructed" >&2
-
-  # ================== Sample stand with sensor ================== #
-  threshold=0.00005
-
-  # cp $TEMPDIR/stand.bin temp.bin
-  # view-points "temp.bin;binary=3d,2ui" "/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.trajectory.csv;fields=,x,y,z" --size=24000000
-  # exit
-
-  export -f sample_sensor
-
-  l=$(cat $TRAJ | wc -l | csv-eval --format=d --fields=x "x=ceil(x/500)")
-  for x in `seq $l` ; do echo -n "_" >&2 ; done
-  echo -en "\r" >&2
-
-  cat $TRAJ |
+    
+    [[ $verbose ]] && echo "Ground finished" >&2
+    
+    for pt in `echo $points | tr ' ' '\n' | csv-paste "-" line-number`
+    do
+        point=$(echo $pt | cut -d, -f1-3)
+        idx=$(echo $pt | cut -d, -f4)
+        # mIdx=$(echo $idx | csv-eval --format=d --fields=i "i=i%($nf+1")
+        tree=$(echo "$files" | grep ",$idx$" | cut -d, -f1)
+        seed=$(echo $tree | grep -o "[0-9]*\.bin" | cut -d. -f1)
+        echo "$point,$seed" >> $TEMPDIR/trunks.csv
+        cat $tree | points-frame --binary=3d,ui --fields=x,y,z,i --from "$point" |
+        csv-paste "-;binary=3d,ui" "value=$seed;binary=ui"
+    done  |
+    cat $TEMPDIR/ground.bin - | #Now, just convert from NWU (generated) to TRAJ frame
+    # cat $TEMPDIR/ground.bin | #Now, just convert from NWU (generated) to TRAJ frame
+    points-frame --binary=3d,2ui --fields=x,y,z --from=$ref_frame > $TEMPDIR/stand.bin
+    [[ $verbose ]] && echo "Stand constructed" >&2
+    
+    # ================== Sample stand with sensor ================== #
+    threshold=0.00005
+    
+    # cp $TEMPDIR/stand.bin temp.bin
+    # view-points "temp.bin;binary=3d,2ui" "/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.trajectory.csv;fields=,x,y,z" --size=24000000
+    # exit
+    
+    export -f sample_sensor
+    
+    l=$(cat $TRAJ | wc -l | csv-eval --format=d --fields=x "x=ceil(x/500)")
+    for x in `seq $l` ; do echo -n "_" >&2 ; done
+    echo -en "\r" >&2
+    
+    cat $TRAJ |
     math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
     csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=t,x,y,z,roll,pitch,yaw | #head -10 | #tr '\n' ' ' |
     # csv-eval --format=t,3d,3d --fields=,x,y,z "xMin=x-15;xMax=x+15;yMin=y-15;yMax=y+15;z Min=z-15;zMax=z+15"
@@ -269,15 +269,15 @@ function go() {
     # ~/src/tree-crops/phenotyping-lidar/virtualisation/add-noise --binary=3d,2ui --fields=x,y,z -s $noise |
     points-frame --binary=3d,2ui --fields=x,y,z --to=$ref_frame | # Convert back to NWU from TRAJ
     points-frame --binary=3d,2ui --fields=x,y,z --to="0,0,0,$(math-deg2rad 180),0,0" # Convert from NWU to NED
-
-  [[ $verbose ]] && echo -e "\nView finished point cloud:" >&2
-  [[ $verbose ]] && echo " | view-points --binary=3d,2ui --fields=x,y,z,scalar --colour=1:4,green:orange" >&2
+    
+    [[ $verbose ]] && echo -e "\nView finished point cloud:" >&2
+    [[ $verbose ]] && echo " | view-points --binary=3d,2ui --fields=x,y,z,scalar --colour=1:4,green:orange" >&2
 }
 
 function option-description
 {
     cat <<eof
---arbaro=[<definition>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/avocado.xml; XML tree generation from Arbaro
+--arbaro=[<definition>]; default=avocado_xml; XML tree generation from Arbaro
 --trajectory=[<traj>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.trajectory.csv; Sensor trajectory to follow
 --sensor=[<sensor>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.lidar.bin; Definition of sensor plane at any point in trajectory
 --size-north=[<length>]; default=44; number of metres to generate (North). (40)
@@ -316,13 +316,13 @@ $( option-description  | sed 's/^/    /g' )
 
 eof
     exit 1
-
+    
 }
 
 if [ "$1" = "-parallel" ]; then
-	shift 1
-	sample_sensor "$@"
-	exit $?
+    shift 1
+    sample_sensor "$@"
+    exit $?
 fi
 
 
