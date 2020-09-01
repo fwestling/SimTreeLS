@@ -31,7 +31,7 @@ function sample_sensor() {
         # criteria=$(echo $line | cut -d, -f8- |
         # 	sed -r 's/([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+)/x;from=\1;to=\2 y;from=\3;to=\4 z;from=\5;to=\6/')
         i=`expr $i + 1`
-        cat $SENSOR |
+        $SENSOR |
         points-frame --from=$frame --binary=ui,7d --fields=,,x,y,z |
         points-frame --from=$frame --binary=ui,7d --fields=,,,,,x,y,z |
         csv-paste "-;binary=ui,7d" "value=$i;binary=ui"
@@ -75,29 +75,29 @@ function go_sensor() {
     sizeY=$6
     noise=$7
     
-    size=$(cat $SENSOR | csv-from-bin ui,7d | wc -l | csv-eval --fields=x "x=x*2" --format=ui)
+    size=$($SENSOR | csv-from-bin ui,7d | wc -l | csv-eval --fields=x "x=x*2" --format=ui)
     
-    # sizeBounds=$(cat $TRAJ | csv-calc min,max --fields=,x,y --format=t,7d |
+    # sizeBounds=$($TRAJ | csv-calc min,max --fields=,x,y --format=t,7d |
     #   csv-eval --format=2d --fields=minX,minY,maxX,maxY "x=maxX-minX+2;y=maxY-minY+2" |
     #   csv-shuffle --fields=,,,,x,y -o=x,y)
-    # meanX=$(cat $TRAJ | csv-calc mean --fields=,x --format=t,7d)
-    # meanY=$(cat $TRAJ | csv-calc mean --fields=,,y --format=t,7d)
+    # meanX=$($TRAJ | csv-calc mean --fields=,x --format=t,7d)
+    # meanY=$($TRAJ | csv-calc mean --fields=,,y --format=t,7d)
     
     cat <(make_ground $sizeX $sizeY 0.5) <(make_ground 1 1 0.1) |
     # csv-eval --binary=3d,ui --fields=x,y,z "x=x+$radX;y=y+$radY" >$GROUND
     points-frame --binary=3d,ui --fields=x,y,z --from=$ref_frame > $GROUND
-    cat $TRAJ |
+    $TRAJ |
     math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
     csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=x,y,z,roll,pitch,yaw |
     while read frame
     do
-        cat $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
+        $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
         points-frame --binary=ui,7d --from=$frame --fields=,,,,,x,y,z
     done | #csv-paste "-" "line-number" | csv-time --from=seconds --to=iso --fields=,,,,,,,t |
     #csv-from-bin 7d | csv-play --speed 100 | # --fields=,,,,,,,t |
     # points-frame --to $ref_frame --binary=ui,7d --fields=,,x,y,z |
     # points-frame --to $ref_frame --binary=ui,7d --fields=,,,,,x,y,z |
-    # view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" <(cat $TRAJ | points-frame --fields=,x,y,z --to=$ref_frame)";fields=,x,y,z;colour=red"
+    # view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" <($TRAJ | points-frame --fields=,x,y,z --to=$ref_frame)";fields=,x,y,z;colour=red"
     view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$GROUND;binary=3d,ui;fields=x,y,z" "$TRAJ;fields=,x,y,z;colour=red;weight=4" "$TEMPDIR/substand.bin;binary=3d,2ui;fields=x,y,z,scalar;colour=0:3,green:orange;size=11000000"
     
     rm $GROUND
@@ -254,11 +254,11 @@ function go() {
     
     export -f sample_sensor
     
-    l=$(cat $TRAJ | wc -l | csv-eval --format=d --fields=x "x=ceil(x/500)")
+    l=$($TRAJ | wc -l | csv-eval --format=d --fields=x "x=ceil(x/500)")
     for x in `seq $l` ; do echo -n "_" >&2 ; done
     echo -en "\r" >&2
     
-    cat $TRAJ |
+    $TRAJ |
     math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
     csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=t,x,y,z,roll,pitch,yaw | #head -10 | #tr '\n' ' ' |
     # csv-eval --format=t,3d,3d --fields=,x,y,z "xMin=x-15;xMax=x+15;yMin=y-15;yMax=y+15;z Min=z-15;zMax=z+15"
@@ -277,9 +277,9 @@ function go() {
 function option-description
 {
     cat <<eof
---arbaro=[<definition>]; default=avocado_xml; XML tree generation from Arbaro
---trajectory=[<traj>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.trajectory.csv; Sensor trajectory to follow
---sensor=[<sensor>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.lidar.bin; Definition of sensor plane at any point in trajectory
+--arbaro=[<definition>]; default=avocado_xml; XML tree generation from Arbaro, by script name
+--trajectory=[<traj>]; default=zeb1_traj; Sensor trajectory to follow, by script name
+--sensor=[<sensor>]; default=build_ld_sensor; Definition of sensor plane at any point in trajectory, by script name
 --size-north=[<length>]; default=44; number of metres to generate (North). (40)
 --size-east=[<length>]; default=38; number of metres to generate (East). (36)
 --spacing-north=[<length>]; default=10; [orchard] number of metres between trees (North)
@@ -336,7 +336,7 @@ eval "$( option-description | comma-options-to-name-value "$@" | comma_path_valu
 
 set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
 
-export TEMPDIR="/home/fwes7558/data/gpc_temp"
+export TEMPDIR="~/data/gpc_temp"
 mkdir -p $TEMPDIR
 
 if [[ "$1" = "sensor" ]]
