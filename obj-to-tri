@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# Given an obj file, samples it to get it as a high-quality CSV.
+
+export readonly name=$( basename $0 )
+
+source $( type -p comma-application-util ) || (error "comma not installed")
+function errcho { (>&2 echo "$name: $1") }
+function error
+{
+    errcho "error: $1"
+    exit 1
+}
+
+function convert() {
+	OBJ=$1
+	# TODO handle "g" fields as well
+
+	cat $OBJ | grep "^v" > verts.csv
+	cat $OBJ | grep '^v' | sed 's/v //' | tr ' ' ',' | csv-to-bin 3d | csv-paste  "-;binary=3d" line-number | csv-eval --binary=3d,ui --fields=,,,i "i=i+1" > vertices.bin
+
+	if [[ `cat $OBJ | grep "^g"` ]]
+	then
+
+		gLines=$(cat $OBJ | grep "^g" -n | sed 's/:g//' | sed -r 's/\s/:/g')
+		lines=$(cat $OBJ | wc -l)
+		id=$(cat $OBJ | grep "^g" -n | wc -l)
+
+		for group in `echo "$gLines"`
+		do
+			set=$(echo "$gLines" | grep $group -A 1 | tr '\n' ':' | sed 's/:$/\n/')
+			[[ $verbose ]] && echo $set >&2
+			start=$(echo $set | cut -d: -f1)
+			label=$(echo $set | cut -d: -f2)
+			[[ verbose ]] && echo "$n" >&2
+			e=$(echo $set | cut -d: -f3)
+			n=$(expr $lines - $start)
+			if [[ $e ]]
+			then
+				end=$(expr $e - 1)
+				d=$(expr $end - $start)
+				[[ $verbose ]] && echo "A" >&2
+				cat $OBJ | tail -$n | head -$d > $id.obj
+			else
+				[[ $verbose ]] && echo "B" >&2
+				cat $OBJ | tail -$n > $id.obj
+			fi
+			id=$(expr $id - 1)
+			[[ $verbose ]] && echo "boo" >&2
+		done
+else 
+	cp $OBJ 0.obj
+fi
+[[ $verbose ]] && echo "second" >&2
+	for f in `ls *.obj`
+	do
+	i=$(echo $f | cut -d. -f1)
+	[[ $verbose ]] && echo $i >&2
+	# Turns quads into triangles by arbitrary splitting
+	# Turns triangles into quads, cause otherwise shit goes bad.
+	# I don't know how to do this right though, if the order is wrong then this doesn't work
+	# To make sure the shape is closed, I do all possible triangles; this will lead to oversampling, but the shape is at least closed.
+	cat $f | grep '^f' | sed 's/f //' | tr ' ' ',' | 
+	sed -r 's/^([^,])*,([^,]*),([^,]*),([^,]*)$/\1,\2,\3\n\1,\3,\4\n\1,\2,\4\n\2,\3,\4/' | 
+	csv-to-bin 3ui | 
+	csv-join --fields=id --binary=3ui "vertices.bin;binary=3d,ui;fields=,,,id" |
+	csv-join --fields=,id --binary=3ui,3d,ui "vertices.bin;binary=3d,ui;fields=,,,id" |
+	csv-join --fields=,,id --binary=3ui,3d,ui,3d,ui "vertices.bin;binary=3d,ui;fields=,,,id" |
+	csv-shuffle -b=3ui,3d,ui,3d,ui,3d,ui -f=a,b,c,xa,ya,za,,xb,yb,zb,,xc,yc,zc -o=xa,ya,za,xb,yb,zb,xc,yc,zc |
+	csv-paste "value=$i;binary=ui" "-;binary=9d"
+done
+
+}
+
+function option-description
+{
+    cat <<eof
+--verbose, -v; Output progress to stderr
+eof
+}
+
+function usage
+{
+    cat <<eof
+
+$name turns an obj file into a binary list of triangle coordinates in ui,9d format (the UI is ID if g is included, 0 otherwise)
+Also creates a temporary directory to store intermediate files.
+
+usage: $name obj [options]
+
+options:
+$( option-description  | sed 's/^/    /g' )
+
+eof
+    exit 1
+
+}
+
+if [ "$1" = "-parallel" ]; then
+	shift 1
+	sample_sensor "$@"
+	exit $?
+fi
+
+
+if (( $( comma_options_has --help $@ ) || $( comma_options_has -h $@ ) )) ; then usage ; fi
+options=$( option-description | comma-options-to-name-value "$@" ) || error "invalid command line options"
+comma_path_value_to_var --prefix="options" <<< "$options"
+eval "$( option-description | comma-options-to-name-value "$@" | comma_path_value_mangle )"
+
+(( $( comma_options_has --verbose "$@" ) )) && export readonly verbose=true
+
+# set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
+
+wherewasi=`pwd`
+fullfilename=`readlink -f $1`
+# export TEMPDIR=`mktemp -d`
+export TEMPDIR=`mktemp -d`
+cd $TEMPDIR
+
+[[ $verbose ]] && echo "Created $TEMPDIR" >&2
+
+convert $fullfilename
+
+cd $wherewasi
+
+[[ $verbose ]] && echo "Deleting $TEMPDIR" >&2
+
+rm -rf $TEMPDIR

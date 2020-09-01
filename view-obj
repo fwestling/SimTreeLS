@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# Given an obj file, samples it to get it as a high-quality CSV.
+
+export readonly name=$( basename $0 )
+
+source $( type -p comma-application-util ) || (error "comma not installed")
+function errcho { (>&2 echo "$name: $1") }
+function error
+{
+    errcho "error: $1"
+    exit 1
+}
+
+function open_viewer() {
+
+	./obj-to-tri $1 |
+	view-points --binary=ui,9d --shape=triangle --fields=id,corners
+
+}
+
+# function convert() {
+#   OBJ=$1
+#   density=$2
+
+# 	cat $OBJ | grep "^v" > verts.csv
+
+# 	gLines=$(cat $OBJ | grep "^g" -n | sed 's/:g//' | sed -r 's/\s/:/g')
+# 	lines=$(cat $OBJ | wc -l)
+
+# 	id=$(cat $OBJ | grep "^g" -n | wc -l)
+
+#   # export -f sample
+#   # echo "$gLines" | parallel -n1 -j8 sample {} $gLines $lines $density $OBJ {= '$_=total_jobs()-$job->seq()+1' =} $verbose |
+# 	for group in `echo "$gLines"`
+# 	do
+#     [[ $verbose ]] && echo "Processing $group ($id)..." >&2
+
+# 		set=$(echo "$gLines" | grep $group -A 1 | tr '\n' ':' | sed 's/:$/\n/')
+#     [[ $verbose ]] && echo "Set: $set" >&2
+# 		start=$(echo $set | cut -d: -f1)
+# 		label=$(echo $set | cut -d: -f2)
+# 		n=$(expr $lines - $start)
+
+# 		e=$(echo $set | cut -d: -f4)
+# 		if [[ $e ]]
+# 		then
+# 			end=$(expr $e - 1)
+# 			d=$(expr $end - $start)
+# 			cat verts.csv <(cat $OBJ | tail -$n | head -$d ) > $label.obj
+# 		else
+# 			cat verts.csv <(cat $OBJ | tail -$n) > $label.obj
+# 		fi
+# 		cloudcompare.CloudCompare -SILENT -NO_TIMESTAMP -C_EXPORT_FMT LAS -O $label.obj -SAMPLE_MESH DENSITY $density >/dev/null 2>/dev/null
+#     cat ${label}_SAMPLED_POINTS.las | las-to-csv points | csv-shuffle -f=x,y,z -o=x,y,z | csv-paste "-" "value=$id"
+#     [[ $verbose ]] && echo "Done!" >&2
+# 		id=$(expr $id - 1)
+# 	done |
+#   if [[ $show ]]
+#   then
+#     tee >(view-points "-;format=3d,ui;fields=x,y,z,id" --size=20000000 "$pc;binary=$bin;fields=$fields")
+#   else
+#     cat
+#   fi
+# }
+
+function option-description
+{
+    cat <<eof
+--verbose, -v; Output progress to stderr
+--show, -s; Display cloud when finished
+eof
+}
+
+function usage
+{
+    cat <<eof
+
+$name views a given pointcloud using view-points
+
+usage: $name obj [options]
+
+options:
+$( option-description  | sed 's/^/    /g' )
+
+eof
+    exit 1
+
+}
+
+if [ "$1" = "-parallel" ]; then
+	shift 1
+	sample_sensor "$@"
+	exit $?
+fi
+
+
+if (( $( comma_options_has --help $@ ) || $( comma_options_has -h $@ ) )) ; then usage ; fi
+options=$( option-description | comma-options-to-name-value "$@" ) || error "invalid command line options"
+comma_path_value_to_var --prefix="options" <<< "$options"
+eval "$( option-description | comma-options-to-name-value "$@" | comma_path_value_mangle )"
+
+(( $( comma_options_has --verbose "$@" ) )) && export readonly verbose=true
+(( $( comma_options_has --force "$@" ) )) && export readonly recompute=true
+
+set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
+
+[[ $verbose ]] && open_viewer $1 -v || open_viewer $1 
