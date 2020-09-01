@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Angular resolution
+ares=0.625
+# FOV
+fov=270
+# Distance error
+de=0.03
+# range (this should be actual range - de)
+r=14.97
+
+# FOV
+fov=270
+f2=$(echo $fov / 2 | bc)
+
+# i is an integer count of tshaphe angular resolution
+i=0
+for ang in $(seq -$f2 $ares $f2); do
+    i=$(expr $i + 1)
+    # ran is the distance from 0,0
+    for ran in $(seq 0 $de $r); do
+        echo "$i,$ran,$ang"
+    done
+done | csv-to-bin ui,2d | math-deg2rad --fields=,,a --binary=ui,2d | csv-eval --binary=ui,2d --fields=i,r,a "xa=cos(a)*r;ya=sin(a)*r;za=0;xb=cos(a)*(r+$de);yb=sin(a)*(r+$de);zb=0" --output-format=6d |
+    csv-shuffle -b=ui,2d,6d -f=i,r,a,xa,ya,za,xb,yb,zb -o=i,r,xa,ya,za,xb,yb,zb >/dev/null
+
+# Something's wrong above, so I just copy the current working one.
+
+cat zeb1.lidar.bin

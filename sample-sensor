@@ -1,0 +1,183 @@
+#!/bin/bash
+
+# Virtually sample a given point cloud using a pseudo-sensor definition
+
+export readonly name=$(basename $0)
+
+source $(type -p comma-application-util) || (error "comma not installed")
+function errcho() { (echo >&2 "$name: $1"); }
+function error() {
+  errcho "error: $1"
+  exit 1
+}
+
+function sample_sensor() {
+  # echo "ARGS: $@" >&2
+  PC=$1
+  shift
+  threshold=$1
+  shift
+  SENSOR=$1
+  shift
+  bin=$1
+  shift
+  fields=$1
+  shift
+
+  #
+  # echo "PC: $PC" >&2
+  # echo "threshold: $threshold" >&2
+  # echo "SENSOR: $SENSOR" >&2
+  # echo "bin: $bin" >&2
+  # echo "fields: $fields" >&2
+
+  secondF=$(echo $fields | csv-fields clear --except x,y,z | csv-fields prefix --path="second")
+  clearF=$(echo $fields | csv-fields clear)
+
+  echo -n "." >&2
+  i=0
+  for line in $@; do
+    ts=$(echo $line | cut -d, -f1)
+    frame=$(echo $line | cut -d, -f2-7)
+    center=$(echo $line | cut -d, -f2-4)
+    # criteria=$(echo $line | cut -d, -f8- |
+    # 	sed -r 's/([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+)/x;from=\1;to=\2 y;from=\3;to=\4 z;from=\5;to=\6/')
+    i=$(expr $i + 1)
+    cat $SENSOR |
+      points-frame --from=$frame --binary=ui,7d --fields=,,x,y,z |
+      points-frame --from=$frame --binary=ui,7d --fields=,,,,,x,y,z |
+      csv-paste "-;binary=ui,7d" "value=$i;binary=ui"
+    #		points-join --binary=ui,7d --fields=,,x,y,z --radius=0.05 <(cat $PC | csv-select --binary=3d,2ui --fields=x,y,z $criteria)";binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
+    # points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
+  done |
+    points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=$bin;fields=$fields" --all 2>/dev/null |
+    points-calc distance --binary=ui,7d,ui,$bin --fields=,,first,second |
+    points-calc distance --binary=ui,7d,ui,$bin,d --fields=,,first/x,first/y,first/z,,,,,$secondF |
+    points-calc distance --binary=ui,7d,ui,$bin,2d --fields=,,,,,first/x,first/y,first/z,,$secondF |
+    csv-shuffle --binary=ui,7d,ui,$bin,3d --fields=new/i,new/r,,,,,,,new/uid,$fields,new/d1,new/d2,new/d3 -o=new/uid,new/i,new/r,$fields,new/d1,new/d2,new/d3 |
+    csv-eval --binary=2ui,d,$bin,3d --fields=,,,$clearF,a,b,c "d=where(abs(b+c-a) < $threshold,1,0)" --output-format=ui |
+    csv-select --binary=2ui,d,$bin,3d,ui --fields=,,,$clearF,,,,d "d;equals=1" |
+    csv-shuffle --binary=2ui,d,$bin,3d,ui --fields=new/uid,new/i,new/r,$fields -o=new/uid,new/i,new/r,$fields |
+    csv-sort --binary=2ui,d,$bin --fields=id,id,r --min |
+    csv-shuffle --binary=2ui,d,$bin --fields=,new/i,new/r,$fields -o=new/i,new/r,$fields
+  [[ $verbose ]] && echo "$i" >&2
+}
+
+function go_sensor() {
+  PC=$1
+  TRAJ=$2
+  SENSOR=$3
+  bin=$4
+  fields=$5
+  ref_frame=$6
+
+  # size=$(cat $SENSOR | csv-from-bin ui,7d | wc -l)
+  size=100000
+
+  ADJ=$(mktemp)
+  cat $PC | csv-thin 0.1 --binary=$bin |
+    points-frame --binary=$bin --fields=$fields --from=$ref_frame >$ADJ
+  [[ $verbose ]] && echo "Sensor visualisation; space to pause/play, down arrow to increment..." >&2
+  cat $TRAJ |
+    math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
+    csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=x,y,z,roll,pitch,yaw |
+    # csv-play --paused --interactive |
+    while read frame; do
+      cat $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
+        points-frame --binary=ui,7d --from=$frame --fields=,,,,,x,y,z
+    done |
+    view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$ADJ;binary=$bin;fields=$fields;size=10000000" "$TRAJ;fields=,x,y,z;colour=red"
+}
+
+function go() {
+  PC=$1
+  TRAJ=$2
+  SENSOR=$3
+  bin=$4
+  fields=$5
+  threshold=$6
+  noise=$7
+  ref_frame=$8
+  batch=$9
+  cores=${10}
+
+  export -f sample_sensor
+
+  fieldsXYZ=$(echo $fields | csv-fields clear --except=x,y,z)
+
+  l=$(cat $TRAJ | wc -l | csv-eval --format=d --fields=x "x=ceil(x/$batch)")
+  for x in $(seq $l); do echo -n "_" >&2; done
+  echo -en "\r" >&2
+
+  cat $TRAJ |
+    math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
+    csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=t,x,y,z,roll,pitch,yaw | #head -10 | #tr '\n' ' ' |
+    # csv-eval --format=t,3d,3d --fields=,x,y,z "xMin=x-15;xMax=x+15;yMin=y-15;yMax=y+15;z Min=z-15;zMax=z+15"
+    xargs -l$batch -P $cores $SHELL "$0" -parallel $PC $threshold $SENSOR $bin $fields | # Nutty workaround using flagged recursion.... but hey it works?
+    # xargs -L 5 -n 5 -P 4 bash -c "sample_sensor $TEMPDIR/stand.bin $threshold $SENSOR" |
+    # xargs -l500 -P 4 ~/src/tree-crops/phenotyping-lidar/virtualisation/zeb-par $TEMPDIR/stand.bin $threshold $SENSOR |
+    csv-shuffle --binary=ui,d,$bin --fields=,,$fields -o=$fields |
+    ~/src/tree-crops/phenotyping-lidar/virtualisation/add-noise --binary=$bin --fields=$fieldsXYZ -s $noise |
+    # points-frame --binary=$bin --fields=$fields --to=$ref_frame |                    # Convert back to NWU from TRAJ
+    # points-frame --binary=$bin --fields=$fields --to="0,0,0,$(math-deg2rad 180),0,0" # Convert from NWU to NED
+    [[ $verbose ]] && echo -e "\nView finished point cloud:" >&2
+  [[ $verbose ]] && echo " | view-points --binary=$bin --fields=$(echo $fields | csv-fields clear --except=x,y,z)" >&2
+}
+
+function option-description() {
+  cat <<eof
+--binary=[<format>]; default=3d,2ui; Binary format of input cloud
+--fields=[<fields>]; default=x,y,z,cl,uid; fields of input cloud (must include x,y,z)
+--threshold=[<value>]; default=0.00005; precision of sensor input in m
+--noise=[<var>]; default=0.02; variance in gaussian noise to add.
+--batch-size=[<count>]; default=500; number of trajectory points to take at once (max 500)
+--cores=[<cores>]; default=1; number of cores to use for parallel processing.
+--trajectory=[<traj>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.trajectory.csv; Sensor trajectory to follow
+--sensor=[<sensor>]; default=/home/fwes7558/src/tree-crops/phenotyping-lidar/virtualisation/zeb1.lidar.bin; Definition of sensor plane at any point in trajectory
+--frame=[<frame>]; default="-1.5,5,0,0,0,$(math-deg2rad 95)"; Reference frame in which the trajectory is, relative to point cloud convention.
+--verbose, -v; Output progress to stderr
+--visualise; Instead of computing, just visualise what it should look like
+eof
+}
+
+function usage() {
+  cat <<eof
+
+$name uses virtual LiDAR definitions to simulate a sampling of a given point cloud.
+as if the defined sensor had scanned it.
+Outputs the finished point cloud to STDOUT.
+
+usage: $name pc [options]
+
+options:
+$(option-description | sed 's/^/    /g')
+
+eof
+  exit 1
+
+}
+
+if [ "$1" = "-parallel" ]; then
+  shift 1
+  sample_sensor "$@"
+  exit $?
+fi
+
+if (($(comma_options_has --help $@) || $(comma_options_has -h $@))); then usage; fi
+options=$(option-description | comma-options-to-name-value "$@") || error "invalid command line options"
+comma_path_value_to_var --prefix="options" <<<"$options"
+eval "$(option-description | comma-options-to-name-value "$@" | comma_path_value_mangle)"
+
+(($(comma_options_has --verbose "$@"))) && export readonly verbose=true
+(($(comma_options_has --force "$@"))) && export readonly recompute=true
+
+set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
+
+export TEMPDIR="/home/fwes7558/data/gpc_temp"
+mkdir -p $TEMPDIR
+
+if (($(comma_options_has --visualise "$@"))); then
+  go_sensor $1 $options_trajectory $options_sensor $options_binary $options_fields $options_frame
+else
+  go $1 $options_trajectory $options_sensor $options_binary $options_fields $options_threshold $options_noise $options_frame $options_batch_size $options_cores
+fi

@@ -1,0 +1,38 @@
+#!/bin/bash
+
+PC=$1
+shift
+threshold=$1
+shift
+SENSOR=$1
+shift
+
+echo -n "." >&2
+# echo "$PC $threshold $SENSOR" >&2
+# echo "$@" >&2
+i=0
+for line in $@
+do
+	ts=$(echo $line | cut -d, -f1)
+	frame=$(echo $line | cut -d, -f2-7)
+	center=$(echo $line | cut -d, -f2-4)
+	i=`expr $i + 1`
+	# criteria=$(echo $line | cut -d, -f8- |
+	# 	sed -r 's/([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+),([-0-9.]+)/x;from=\1;to=\2 y;from=\3;to=\4 z;from=\5;to=\6/')
+	cat $SENSOR |
+		points-frame --from=$frame --binary=ui,7d --fields=,,x,y,z |
+		points-frame --from=$frame --binary=ui,7d --fields=,,,,,x,y,z |
+		csv-paste "-;binary=ui,7d" "value=$i;binary=ui"
+#		points-join --binary=ui,7d --fields=,,x,y,z --radius=0.05 <(cat $PC | csv-select --binary=3d,2ui --fields=x,y,z $criteria)";binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
+	# points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null
+done |
+	points-join --binary=ui,7d,ui --fields=,,x,y,z --radius=0.05 "$PC;binary=3d,2ui;fields=x,y,z" --all 2>/dev/null |
+	points-calc distance --binary=ui,7d,ui,3d,2ui --fields=,,first,second |
+	points-calc distance --binary=ui,7d,ui,3d,2ui,d --fields=,,first,,,,,second |
+	points-calc distance --binary=ui,7d,ui,3d,2ui,2d --fields=,,,,,first,,second |
+	csv-shuffle --binary=ui,7d,ui,3d,2ui,3d --fields=i,r,,,,,,,uid,x,y,z,cl,seg,d1,d2,d3 -o=uid,i,r,x,y,z,d1,d2,d3,cl,seg |
+	csv-eval --binary=2ui,d,3d,3d,2ui --fields=,,,,,,a,b,c "d=where(abs(b+c-a) < $threshold,1,0)" --output-format=ui |
+	csv-select --binary=2ui,d,3d,3d,3ui --fields=,,,,,,,,,,,d "d;equals=1" |
+	csv-shuffle --binary=2ui,d,3d,3d,3ui --fields=uid,i,r,x,y,z,,,,cl,seg -o=uid,i,r,x,y,z,cl,seg |
+	csv-sort --binary=2ui,d,3d,2ui --fields=id,id,r --min |
+	csv-shuffle --binary=2ui,d,3d,2ui --fields=,i,r,x,y,z,cl,seg -o=i,r,x,y,z,cl,seg
