@@ -1,0 +1,20 @@
+v 1 0 0
+v 1 0 1
+v 0 0 1
+v 0 0 0
+v 1 1 0
+v 1 1 1
+v 0 1 1
+v 0 1 0
+g one
+f 3 4 7 8
+g two
+f 1 2 5 6
+g three
+f 1 2 3 4
+g four
+f 5 6 7 8
+g five
+f 1 4 5 8
+g six
+f 2 3 6 7
