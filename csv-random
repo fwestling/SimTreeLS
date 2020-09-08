@@ -1,0 +1,22 @@
+#!/usr/bin/python
+import comma
+import numpy as np
+import sys
+import random
+
+corner_t = comma.csv.struct( 'x,y,z', 'float64', 'float64', 'float64' )
+
+event_t = comma.csv.struct( 'id,first,second,third,area,npts', 'i4', corner_t, corner_t, corner_t, 'float64', 'i4' )
+
+fields = 'id,first,second,third,area,npts'
+format = ','.join( comma.csv.format.to_numpy( 'ui,9d,d,ui' ) )
+input_stream = comma.csv.stream( event_t, fields=fields, format=format )
+
+output_t = comma.csv.struct( 'r1,r2', 'float64','float64')
+output_stream = comma.csv.stream( output_t, binary=True, tied=input_stream )
+
+for events in input_stream.iter(size=1):
+  output = np.empty( events.size, dtype=output_t )
+  output['r1'] = random.random()
+  output['r2'] = random.random()
+  output_stream.write( output )

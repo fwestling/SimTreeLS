@@ -1,0 +1,19 @@
+#!/usr/bin/python
+import comma
+import numpy as np
+import sys
+
+corner_t = comma.csv.struct( 'x,y,z', 'float64', 'float64', 'float64' )
+
+event_t = comma.csv.struct( 'id,first,second,third,area,npts', 'i4', corner_t, corner_t, corner_t, 'float64', 'i4' )
+
+fields = 'id,first,second,third,area,npts'
+format = ','.join( comma.csv.format.to_numpy( 'ui,9d,d,ui' ) )
+input_stream = comma.csv.stream( event_t, fields=fields, format=format )
+
+output_stream = comma.csv.stream( event_t, binary=True )
+
+for events in input_stream.iter(size=1):
+  # sys.stderr.write(str(events['npts']))
+  for i in range(0,events['npts']):
+    output_stream.write( events )

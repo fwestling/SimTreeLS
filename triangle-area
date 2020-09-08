@@ -1,0 +1,42 @@
+#!/usr/bin/python
+import comma
+import numpy as np
+import sys
+
+
+def heron(a,b,c):
+	s = (a + b + c)/2
+	return np.sqrt(s*(s-a)*(s-b)*(s-c))	
+
+def len(a,b):
+	xx=a['x']-b['x']
+	yy=a['y']-b['y']
+	zz=a['z']-b['z']
+	return np.sqrt(xx*xx+yy*yy+zz*zz)
+
+def area(f,s,t):
+	return heron(len(f,s),len(s,t),len(f,t))
+
+#  Somehow this can make formats...
+	# https://github.com/acfr/comma/wiki/python-csv-module#processing_and_writing
+# corner_t = comma.csv.struct( 'x,y,z', 'float64', 'float64','float64' )
+# first_t = comma.csv.struct( corner_t )
+# second_t = comma.csv.struct( corner_t )
+# third_t = comma.csv.struct( corner_t )
+# corners_t = comma.csv.struct(first_t,second_t,third_t)
+
+corner_t = comma.csv.struct( 'x,y,z', 'float64', 'float64', 'float64' )
+
+event_t = comma.csv.struct( 'id,first,second,third', 'i4', corner_t, corner_t, corner_t )
+
+fields = 'id,first,second,third'
+format = ','.join( comma.csv.format.to_numpy( 'ui,9d' ) )
+input_stream = comma.csv.stream( event_t, fields=fields, format=format )
+
+output_t = comma.csv.struct( 'area', 'float64')
+output_stream = comma.csv.stream( output_t, binary=True, tied=input_stream )
+
+for events in input_stream.iter():
+  output = np.empty( events.size, dtype=output_t )
+  output['area'] = area(events['first'],events['second'],events['third'])
+  output_stream.write( output )
