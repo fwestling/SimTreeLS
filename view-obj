@@ -2,20 +2,26 @@
 
 # Given an obj file, samples it to get it as a high-quality CSV.
 
-export readonly name=$( basename $0 )
+export readonly name=$(basename $0)
 
-source $( type -p comma-application-util ) || (error "comma not installed")
-function errcho { (>&2 echo "$name: $1") }
-function error
-{
+source $(type -p comma-application-util) || (error "comma not installed")
+function errcho() { (echo >&2 "$name: $1"); }
+function error() {
     errcho "error: $1"
     exit 1
 }
 
 function open_viewer() {
 
-	./obj-to-tri $1 |
-	view-points --binary=ui,9d --shape=triangle --fields=id,corners
+    if [[ $sample ]]; then
+        obj-to-tri $1 >temp_a.bin
+        csv-from-obj $1 --density=$2 >temp_b.bin
+        view-points "temp_a.bin;binary=ui,9d;shape=triangle;fields=id,corners" "temp_b.bin;binary=ui,4d;fields=,x,y,z,scalar;weight=$3;colour=0:1,jet"
+        rm temp_a.bin temp_b.bin
+    else
+        ./obj-to-tri $1 |
+            view-points --binary=ui,9d --shape=triangle --fields=id,corners
+    fi
 
 }
 
@@ -64,16 +70,16 @@ function open_viewer() {
 #   fi
 # }
 
-function option-description
-{
+function option-description() {
     cat <<eof
 --verbose, -v; Output progress to stderr
---show, -s; Display cloud when finished
+--sample, -s; Also display sampled point cloud using csv-from-obj
+--density=[<quality>]; default=1; Density of mesh point cloud sampling in points per square metre (approximate)
+--weight=[<pointsize>]; default=10; Weight of sampling points
 eof
 }
 
-function usage
-{
+function usage() {
     cat <<eof
 
 $name views a given pointcloud using view-points
@@ -81,7 +87,7 @@ $name views a given pointcloud using view-points
 usage: $name obj [options]
 
 options:
-$( option-description  | sed 's/^/    /g' )
+$(option-description | sed 's/^/    /g')
 
 eof
     exit 1
@@ -89,20 +95,19 @@ eof
 }
 
 if [ "$1" = "-parallel" ]; then
-	shift 1
-	sample_sensor "$@"
-	exit $?
+    shift 1
+    sample_sensor "$@"
+    exit $?
 fi
 
+if (($(comma_options_has --help $@) || $(comma_options_has -h $@))); then usage; fi
+options=$(option-description | comma-options-to-name-value "$@") || error "invalid command line options"
+comma_path_value_to_var --prefix="options" <<<"$options"
+eval "$(option-description | comma-options-to-name-value "$@" | comma_path_value_mangle)"
 
-if (( $( comma_options_has --help $@ ) || $( comma_options_has -h $@ ) )) ; then usage ; fi
-options=$( option-description | comma-options-to-name-value "$@" ) || error "invalid command line options"
-comma_path_value_to_var --prefix="options" <<< "$options"
-eval "$( option-description | comma-options-to-name-value "$@" | comma_path_value_mangle )"
-
-(( $( comma_options_has --verbose "$@" ) )) && export readonly verbose=true
-(( $( comma_options_has --force "$@" ) )) && export readonly recompute=true
+(($(comma_options_has --verbose "$@"))) && export readonly verbose=true
+(($(comma_options_has --sample "$@"))) && export readonly sample=true
 
 set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
 
-[[ $verbose ]] && open_viewer $1 -v || open_viewer $1 
+[[ $verbose ]] && open_viewer $1 $options_density $options_weight -v || open_viewer $1 $options_density $options_weight

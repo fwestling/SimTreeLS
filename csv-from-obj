@@ -18,14 +18,14 @@ function go() {
 
 	[[ $verbose ]] && echo "Density: $density" >&2
 
-	obj-to-tri $INFILE | triangle-area |
-		csv-eval --binary=ui,9d,d --fields=,,,,,,,,,,area "npts=area*$density + 0.5" --output-format=ui |
-		csv-paste "-;binary=ui,9d,d,ui,2d" "line-number;binary=ui" |
-		csv-eval --binary=ui,9d,d,ui,2d,ui --fields=i,,,,,,,,,,,,,l "i=l" |
-		csv-shuffle -b=ui,9d,d,ui,2d,ui -f=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n -o=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n |
-		csv-replicate |
+	obj-to-tri $INFILE | triangle-area | tee ~/data/testbed/vlidar/temp.ta |
+		csv-eval --binary=ui,9d,d --fields=,,,,,,,,,,area "npts=area*$density + 0.5" --output-format=ui | tee ~/data/testbed/vlidar/temp.tb |
+		# csv-paste "-;binary=ui,9d,d,ui,2d" "line-number;binary=ui" | tee ~/data/testbed/vlidar/temp.b |
+		# csv-eval --binary=ui,9d,d,ui,2d,ui --fields=i,,,,,,,,,,,,,l "i=l" |
+		# csv-shuffle -b=ui,9d,d,ui,2d,ui -f=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n -o=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n | tee ~/data/testbed/vlidar/temp.r |
+		csv-replicate | tee ~/data/testbed/vlidar/temp.td |
+		csv-random | tee ~/data/testbed/vlidar/temp.tc |
 		# We now have one line per new point - all we have to do is compute the new coordinates using rand...
-		csv-random |
 		csv-eval --binary=ui,9d,d,ui,2d --fields=,fx,fy,fz,sx,sy,sz,tx,ty,tz,,,a,b \
 			"sa=sqrt(a);sb=sqrt(b);\
 		x=(1-sa)*fx + (sa*(1-b)) * sx + b * sa * tx;\
@@ -36,7 +36,7 @@ function go() {
 
 function option-description() {
 	cat <<eof
---density=[<quality>]; default=3; Density of mesh point cloud sampling in points per square metre (approximate)
+--density=[<quality>]; default=1; Density of mesh point cloud sampling in points per square metre (approximate)
 --verbose, -v; Output progress to stderr
 --show, -s; Display cloud when finished
 eof
