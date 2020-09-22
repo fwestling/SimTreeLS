@@ -1,0 +1,193 @@
+#!/bin/bash
+
+# Generate a point cloud using a virtual sensor, trajectory, and Arbaro definition.
+
+export readonly name=$(basename $0)
+
+source $(type -p comma-application-util) || (error "comma not installed")
+function errcho() { (echo >&2 "$name: $1"); }
+function error() {
+    errcho "error: $1"
+    exit 1
+}
+
+# TODO: Add larger-than-gaussian noise to these points (waves?).
+function make_ground() {
+    sizeX=$1
+    sizeY=$2
+    res=$3
+    [[ $verbose ]] && echo "Making ground" >&2
+    for x in $(seq 0 $res $sizeX); do
+        seq 0 $res $sizeY | xargs -n1 -P8 -i bash -c "echo $x,{},0.1,0"
+    done | csv-to-bin 3d,ui |
+        csv-eval --binary=3d,ui --fields=x,y,z,i "x=x-$sizeX/2;y=y-$sizeY/2"
+}
+
+function generate_tree() {
+    seed=$1
+    ARBARO=$2
+    DIR=$3
+    maxH=$4
+    minH=$5
+    verbose=$6
+    density=5000
+
+    OBJ=$DIR/$seed.obj
+    BIN=$DIR/$seed.bin
+
+    echo -n . >&2
+    [[ $verbose ]] && echo "..Generating $OBJ" >&2
+    # $ARBARO | java -jar $(dirname "${BASH_SOURCE[0]}")/arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q #2>/dev/null
+    $ARBARO | java -jar arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q 2>/dev/null
+
+    csv-from-obj $OBJ --density=$density | csv-shuffle -b=ui,4d -f=id,x,y,z,area -o=x,y,z,id |
+        points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
+        csv-select --binary=3d,ui --fields=x,y,z "z;greater=0" >$BIN
+
+    ## Filtering!
+    size=$(cat $DIR/$seed.bin | csv-calc diameter --binary=3d,ui --fields=,,z | csv-from-bin d | cut -d. -f1)
+    [[ $size -gt $maxH ]] && rm $OBJ $BIN && [[ $verbose ]] && echo "Discarded, too big" >&2   # Too big to be realistic
+    [[ $size -lt $minH ]] && rm $OBJ $BIN && [[ $verbose ]] && echo "Discarded, too small" >&2 # Too small to be realistic
+}
+
+function go() {
+    ARBARO=$1
+    sizeN=$2
+    sizeE=$3
+    spaceN=$4
+    spaceE=$5
+    method=$6
+    maxH=$7
+    minH=$8
+    ref_frame=$9
+
+    radN=$(echo $sizeN | csv-eval --format=d --fields=x "x=x/2")
+    radE=$(echo $sizeE | csv-eval --format=d --fields=x "x=x/2")
+
+    species=$($ARBARO | name-value-get "arbaro/species/<xmlattr>/name")
+    [[ $verbose ]] && echo Species: $species >&2
+    # ============ Generate trees in HD PC form ============ #
+    TREES="$TEMPDIR/${species}_trees"
+
+    mkdir -p $TREES
+
+    nTrees=$(echo $sizeN,$sizeE,$spaceN,$spaceE | csv-eval --fields=a,b,c,d "x=round((a/c)*(b/d)*2)" --format=4d | csv-shuffle --fields=,,,,x -o=x)
+    [[ $verbose ]] && echo "$nTrees trees needed" >&2
+    # Should XARGS this bit.
+    while [[ $(ls $TREES | grep "\.bin" | wc -l) -lt $nTrees ]]; do
+        for i in $(seq 8); do echo $RANDOM; done |
+            xargs -n1 -P8 -i bash -c "$(declare -f) ; generate_tree {} $ARBARO $TREES $maxH $minH $verbose"
+        [[ $verbose ]] && echo $(ls $TREES | grep "\.bin" | wc -l) "<?" $nTrees >&2
+    done
+    echo "" >&2
+
+    [[ $verbose ]] && echo "$spaceN, $spaceE, $radN, $radE" >&2
+
+    # ================== Construct stand ================== #
+    points=$(if [[ $method == "orchard" ]]; then
+        for x in $(seq 0 $spaceN $radN); do
+            for y in $(seq 0 $spaceE $radE); do echo "$x,$y,0.1"; done
+            for y in $(seq -$spaceE -$spaceE -$radE); do echo "$x,$y,0.1"; done
+        done
+        for x in $(seq -$spaceN -$spaceN -$radN); do
+            for y in $(seq 0 $spaceE $radE); do echo "$x,$y,0.1"; done
+            for y in $(seq -$spaceE -$spaceE -$radE); do echo "$x,$y,0.1"; done
+        done
+    elif [[ $method == "forest" ]]; then
+        echo "0,0,0"
+        error "Not yet implemented"
+    fi)
+
+    [[ $verbose ]] && echo "POINTS" >&2
+    [[ $verbose ]] && echo "$points" >&2
+
+    files=$(find $TREES | grep "\.bin$" | shuf | csv-paste "-" line-number)
+
+    echo "trunk/x,trunk/y,trunk/z,id" >$TEMPDIR/trunks.csv
+
+    [[ -f $TEMPDIR/ground.bin && ! $force ]] || make_ground $sizeN $sizeE 0.01 |
+        csv-paste "-;binary=3d,ui" "value=0;binary=ui" >$TEMPDIR/ground.bin
+
+    [[ $verbose ]] && echo "Ground finished" >&2
+
+    for pt in $(echo $points | tr ' ' '\n' | csv-paste "-" line-number); do
+        point=$(echo $pt | cut -d, -f1-3)
+        idx=$(echo $pt | cut -d, -f4)
+        # mIdx=$(echo $idx | csv-eval --format=d --fields=i "i=i%($nf+1")
+        tree=$(echo "$files" | grep ",$idx$" | cut -d, -f1)
+        seed=$(echo $tree | grep -o "[0-9]*\.bin" | cut -d. -f1)
+        echo "$point,$seed" >>$TEMPDIR/trunks.csv
+        cat $tree | points-frame --binary=3d,ui --fields=x,y,z,i --from "$point" |
+            csv-paste "-;binary=3d,ui" "value=$seed;binary=ui"
+    done |
+        cat $TEMPDIR/ground.bin - | #Now, just convert from NWU (generated) to TRAJ frame
+        # cat $TEMPDIR/ground.bin | #Now, just convert from NWU (generated) to TRAJ frame
+        points-frame --binary=3d,2ui --fields=x,y,z --from=$ref_frame
+    [[ $verbose ]] && echo "Stand constructed" >&2
+
+    [[ $verbose ]] && echo -e "\nView finished point cloud:" >&2
+    [[ $verbose ]] && echo " | view-points --binary=3d,2ui --fields=x,y,z,scalar --colour=1:4,green:orange" >&2
+}
+
+function option-description() {
+    cat <<eof
+--arbaro=[<definition>]; default=avocado_xml; XML tree generation from Arbaro, by script name
+--size-north=[<length>]; default=44; number of metres to generate (North). (40)
+--size-east=[<length>]; default=38; number of metres to generate (East). (36)
+--spacing-north=[<length>]; default=10; [orchard] number of metres between trees (North)
+--spacing-east=[<length>]; default=6; [orchard] number of metres between trees (East)
+--max-height=[<height>]; default=10; Maximum size (m) of generated trees
+--min-height=[<height>]; default=4; Maximum size (m) of generated trees
+--frame=[<frame>]; default="-1.5,5,0,0,0,$(math-deg2rad 95)"; Reference frame in which the trajectory is, relative to point cloud convention.
+--verbose, -v; Output progress to stderr
+--force, -f; Force recomputation of elements rather than using saved files (for when you change parameters)
+eof
+}
+
+function usage() {
+    cat <<eof
+
+$name uses tree and LiDAR definitions to procedurally generate a point cloud
+as if the defined sensor had scanned a set of random trees of the given species.
+Outputs the finished point cloud to STDOUT.
+Also creates a temporary directory to store intermediate files.
+
+usage: $name <operation> [options]
+
+<operation>:
+  orchard
+    Generate a point cloud in an orchard setting (gridded trees, north-east aligned)
+  forest
+    Generate a point cloud in a forest setting (randomly placed trees)
+options:
+$(option-description | sed 's/^/    /g')
+
+eof
+    exit 1
+
+}
+
+if [ "$1" = "-parallel" ]; then
+    shift 1
+    sample_sensor "$@"
+    exit $?
+fi
+
+if (($(comma_options_has --help $@) || $(comma_options_has -h $@))); then usage; fi
+options=$(option-description | comma-options-to-name-value "$@") || error "invalid command line options"
+comma_path_value_to_var --prefix="options" <<<"$options"
+eval "$(option-description | comma-options-to-name-value "$@" | comma_path_value_mangle)"
+
+(($(comma_options_has --verbose "$@"))) && export readonly verbose=true
+(($(comma_options_has --force "$@"))) && export readonly recompute=true
+
+# set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
+
+export TEMPDIR="/home/fwes7558/data/gpc_temp"
+mkdir -p $TEMPDIR
+
+if [ "$1" = "orchard" -o "$1" = "forest" ]; then
+    go $options_arbaro $options_size_north $options_size_east $options_spacing_north $options_spacing_east $1 $options_max_height $options_min_height $options_frame
+else
+    error "Unknown operation \"$1\""
+fi

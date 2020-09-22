@@ -6,7 +6,7 @@ import sys
 
 def heron(a,b,c):
 	s = (a + b + c)/2
-	return np.sqrt(s*(s-a)*(s-b)*(s-c))	
+	return np.sqrt(np.max((s*(s-a)*(s-b)*(s-c)),0))	
 
 def len(a,b):
 	xx=a['x']-b['x']

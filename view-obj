@@ -19,7 +19,7 @@ function open_viewer() {
         view-points "temp_a.bin;binary=ui,9d;shape=triangle;fields=id,corners" "temp_b.bin;binary=ui,4d;fields=,x,y,z,scalar;weight=$3;colour=0:1,jet"
         rm temp_a.bin temp_b.bin
     else
-        ./obj-to-tri $1 |
+        obj-to-tri $1 |
             view-points --binary=ui,9d --shape=triangle --fields=id,corners
     fi
 
