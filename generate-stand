@@ -39,7 +39,7 @@ function generate_tree() {
     [[ $verbose ]] && echo "..Generating $OBJ" >&2
     # $ARBARO | java -jar $(dirname "${BASH_SOURCE[0]}")/arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q #2>/dev/null
     $ARBARO | java -jar arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q 2>/dev/null
-
+    # echo "$OBJ" >&2
     csv-from-obj $OBJ --density=$density | csv-shuffle -b=ui,4d -f=id,x,y,z,area -o=x,y,z,id |
         points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
         csv-select --binary=3d,ui --fields=x,y,z "z;greater=0" >$BIN
@@ -117,6 +117,7 @@ function go() {
         tree=$(echo "$files" | grep ",$idx$" | cut -d, -f1)
         seed=$(echo $tree | grep -o "[0-9]*\.bin" | cut -d. -f1)
         echo "$point,$seed" >>$TEMPDIR/trunks.csv
+        [[ $verbose ]] && echo Tree $tree >&2
         cat $tree | points-frame --binary=3d,ui --fields=x,y,z,i --from "$point" |
             csv-paste "-;binary=3d,ui" "value=$seed;binary=ui"
     done |

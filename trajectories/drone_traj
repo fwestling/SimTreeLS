@@ -4,7 +4,7 @@ if [[ -f temp_drone.traj ]]; then
     cat temp_drone.traj
 else
     ts="20171209T064706"
-    z=10
+    z=16
     # SENSOR=hd.sensor.bin
     # Spacing should be related to scans per second and driving speed
     #  The zeb1 scans at 43000 points per second, 270 degrees at a 0.625 degree interval
