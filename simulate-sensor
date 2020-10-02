@@ -90,16 +90,30 @@ function go() {
     ref_frame=$4
     noise=$5
     ncores=$6
+    npoints=$7
+    thin=$8
 
     # ================== Sample stand with sensor ================== #
     threshold=0.00005
 
     # $TRAJ | view-points "$STAND;binary=3d,2ui;fields=x,y,z,scalar,id;colour=-1:5,jet" "-;fields=,x,y,z" --size=24000000 --background-colour=white
     # exit
+    THINSTAND=$STAND;
+    if [[ `echo "$thin < 1" | bc` == 1 ]] 
+    then
+        THINSTAND=$(mktemp)
+        if [[ $verbose ]] 
+        then
+            pv $STAND | csv-thin --binary=3d,2ui $thin > $THINSTAND
+        else 
+            cat $STAND | csv-thin --binary=3d,2ui $thin > $THINSTAND
+        fi
+    fi
+    [[ $verbose ]] && echo "Thin stand produced" >&2
 
     export -f sample_sensor
 
-    l=$($TRAJ  |wc -l | csv-eval --format=d --fields=x "x=ceil(x/500)")
+    l=$($TRAJ  |wc -l | csv-eval --format=d --fields=x "x=ceil(x/$npoints)")
     for x in $(seq $l); do echo -n "_" >&2; done
     echo -en "\r" >&2
 
@@ -107,7 +121,7 @@ function go() {
         math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
         csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=t,x,y,z,roll,pitch,yaw | #head -10 | #tr '\n' ' ' |
         # csv-eval --format=t,3d,3d --fields=,x,y,z "xMin=x-15;xMax=x+15;yMin=y-15;yMax=y+15;z Min=z-15;zMax=z+15"
-        xargs -l500 -P $ncores $SHELL "$0" -parallel $STAND $threshold $SENSOR | # Nutty workaround using flagged recursion.... but hey it works?
+        xargs -l$npoints -P $ncores $SHELL "$0" -parallel $THINSTAND $threshold $SENSOR| # Nutty workaround using flagged recursion.... but hey it works?
         # xargs -L 5 -n 5 -P 4 bash -c "sample_sensor $TEMPDIR/stand.bin $threshold $SENSOR" |
         # xargs -l500 -P 4 ~/src/tree-crops/phenotyping-lidar/virtualisation/zeb-par $TEMPDIR/stand.bin $threshold $SENSOR |
         csv-shuffle --binary=ui,d,3d,2ui --fields=i,r,x,y,z,cl,seg -o=x,y,z,cl,seg |
@@ -117,6 +131,12 @@ function go() {
 
     [[ $verbose ]] && echo -e "\nView finished point cloud:" >&2
     [[ $verbose ]] && echo " | view-points --binary=3d,2ui --fields=x,y,z,scalar --colour=1:4,green:orange" >&2
+
+    if [[ `echo "$thin < 1" | bc` == 1 ]] 
+    then
+        rm $THINSTAND
+    fi
+
 }
 
 function option-description() {
@@ -126,6 +146,8 @@ function option-description() {
 --frame=[<frame>]; default="-1.5,5,0,0,0,$(math-deg2rad 95)"; Reference frame in which the trajectory is, relative to point cloud convention.
 --noise=[<stdev>]; default=0.02; noise level (stdev of gaussian distribution)
 --cores=[<ncores>]; default=1; number of cores
+--numpoints=[<num>]; default=500; number of points to take at once
+--thin=[<perc>]; default=1; Amount to thin out the stand, if needed to fit in RAM
 --verbose, -v; Output progress to stderr
 --visualise; Just see what it would look like
 eof
@@ -167,7 +189,7 @@ eval "$(option-description | comma-options-to-name-value "$@" | comma_path_value
 set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
 
 if [[ $visualise ]]; then
-    go_sensor $1 $options_trajectory $options_sensor $options_frame $options_cores
+    go_sensor $1 $options_trajectory $options_sensor $options_frame $options_cores $options_numpoints $options_thin
 else
-    go $1 $options_trajectory $options_sensor $options_frame $options_noise $options_cores
+    go $1 $options_trajectory $options_sensor $options_frame $options_noise $options_cores $options_numpoints $options_thin
 fi
