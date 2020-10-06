@@ -20,7 +20,7 @@ function make_ground() {
     for x in $(seq 0 $res $sizeX); do
         seq 0 $res $sizeY | xargs -n1 -P8 -i bash -c "echo $x,{},0.1,0"
     done | csv-to-bin 3d,ui |
-        csv-eval --binary=3d,ui --fields=x,y,z,i "x=x-$sizeX/2;y=y-$sizeY/2"
+    csv-eval --binary=3d,ui --fields=x,y,z,i "x=x-$sizeX/2;y=y-$sizeY/2"
 }
 
 function generate_tree() {
@@ -31,26 +31,88 @@ function generate_tree() {
     minH=$5
     verbose=$6
     density=5000
-
+    
     OBJ=$DIR/$seed.obj
     BIN=$DIR/$seed.bin
-
+    
     echo -n . >&2
     [[ $verbose ]] && echo "..Generating $OBJ" >&2
     # $ARBARO | java -jar $(dirname "${BASH_SOURCE[0]}")/arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q #2>/dev/null
     $ARBARO | java -jar arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q 2>/dev/null
     # echo "$OBJ" >&2
     csv-from-obj $OBJ --density=$density | csv-shuffle -b=ui,4d -f=id,x,y,z,area -o=x,y,z,id |
-        points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
-        csv-select --binary=3d,ui --fields=x,y,z "z;greater=0" >$BIN
-
+    points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
+    csv-select --binary=3d,ui --fields=x,y,z "z;greater=0" >$BIN
+    
     ## Filtering!
     size=$(cat $DIR/$seed.bin | csv-calc diameter --binary=3d,ui --fields=,,z | csv-from-bin d | cut -d. -f1)
     [[ $size -gt $maxH ]] && rm $OBJ $BIN && [[ $verbose ]] && echo "Discarded, too big" >&2   # Too big to be realistic
     [[ $size -lt $minH ]] && rm $OBJ $BIN && [[ $verbose ]] && echo "Discarded, too small" >&2 # Too small to be realistic
 }
 
-function go() {
+function make_forest_points() {
+    sizeN=$1
+    sizeE=$2
+    space=$3
+    vb=$4
+    
+    nTrees=$(echo "( $sizeN * $sizeE ) / ( $space * $space * 1.42 )" | bc)
+    radN=$(echo "( $sizeN / 2 )" | bc -l)
+    radE=$(echo "( $sizeE / 2 )" | bc -l)
+    [[ $vb ]] && echo nTrees = $nTrees >&2
+    
+    tb=50 # how many tries in a row before you do a shuffle?
+    tb2=$(expr $tb - 1)
+    rMin=0; # Smallest random integer
+    rMax=32767; # Largest random integer
+    tries=0
+    lastwin=0
+    MAX_TRIES=1000
+    points="0,0,0"
+    while [ `echo "$points" | wc -l` -lt $nTrees -a $tries -lt $MAX_TRIES ]
+    do
+        # echo "$points" | wc -l >&2
+        pt=$(echo $RANDOM,$RANDOM,0.1 |
+        csv-eval --fields=x,y,z "x = (x - $rMax/2)*$sizeN/($rMax-$rMin);y = (y - $rMax/2)*$sizeE/($rMax-$rMin)")
+        # After $tb tries in a row, remove some of the original points to get out of a local minima
+        if [[ `echo "(($tries - $lastwin) % $tb) == $tb2" | bc` -eq 0 ]]
+        then
+            minDist=$(echo "$points" | csv-paste - value=$pt | points-calc distance --fields=first,second | csv-calc min --format=7d --fields=,,,,,,d)
+            [[ `echo "$minDist >= $space" | bc` -eq 1 ]] && points=$(echo "$points $pt" | tr ' ' '\n') && lastwin=$tries || tries=`expr $tries + 1`
+        else
+            temppts=$(echo "$points" | csv-paste - value=$pt | points-calc distance --fields=first,second |
+            csv-select --fields=,,,,,,d --format=7d "d;from=$space" | csv-shuffle -f=x,y,z -o=x,y,z | csv-thin 0.9)
+            points=$(echo "$temppts $pt" | tr ' ' '\n')
+            tries=`expr $tries + 1`
+            [[ $vb ]] && echo -en "!" >&2
+        fi
+        [[ $vb ]] && echo -en "." >&2
+    done
+    [[ $vb ]] && echo "Made $(echo "$points" | wc -l) points with $tries failures!" >&2
+    
+    [ $tries -ge $MAX_TRIES -a  `echo "$points" | wc -l` -lt $nTrees ] && echo "Failed to generate enough forest points; try again or tweak --size or --spacing-min parameters." >&2
+    echo "$points"
+}
+
+function testForest() {
+    ARBARO=$1
+    sizeN=$2
+    sizeE=$3
+    space=$4
+    method=$5
+    maxH=$6
+    minH=$7
+    ref_frame=$8
+    [[ -f $TEMPDIR/ground.bin && ! $force ]] || make_ground $sizeN $sizeE 0.1 |
+    csv-paste "-;binary=3d,ui" "value=0;binary=ui" >$TEMPDIR/ground.bin
+    
+    points=$(make_forest_points $sizeN $sizeE $space $verbose)
+    
+    echo "$points" | csv-paste - line-number | view-points "$TEMPDIR/ground.bin;binary=3d,2ui;colour=black" "-;fields=x,y,z,id;weight=20;"  --background-color=white
+    
+}
+
+function testOrchard() {
     ARBARO=$1
     sizeN=$2
     sizeE=$3
@@ -60,31 +122,16 @@ function go() {
     maxH=$7
     minH=$8
     ref_frame=$9
-
+    
     radN=$(echo $sizeN | csv-eval --format=d --fields=x "x=x/2")
     radE=$(echo $sizeE | csv-eval --format=d --fields=x "x=x/2")
-
-    species=$($ARBARO | name-value-get "arbaro/species/<xmlattr>/name")
-    [[ $verbose ]] && echo Species: $species >&2
-    # ============ Generate trees in HD PC form ============ #
-    TREES="$TEMPDIR/${species}_trees"
-
-    mkdir -p $TREES
-
-    nTrees=$(echo $sizeN,$sizeE,$spaceN,$spaceE | csv-eval --fields=a,b,c,d "x=round((a/c)*(b/d)*2)" --format=4d | csv-shuffle --fields=,,,,x -o=x)
-    [[ $verbose ]] && echo "$nTrees trees needed" >&2
-    # Should XARGS this bit.
-    while [[ $(ls $TREES | grep "\.bin" | wc -l) -lt $nTrees ]]; do
-        for i in $(seq 8); do echo $RANDOM; done |
-            xargs -n1 -P8 -i bash -c "$(declare -f) ; generate_tree {} $ARBARO $TREES $maxH $minH $verbose"
-        [[ $verbose ]] && echo $(ls $TREES | grep "\.bin" | wc -l) "<?" $nTrees >&2
-    done
-    echo "" >&2
-
-    [[ $verbose ]] && echo "$spaceN, $spaceE, $radN, $radE" >&2
-
-    # ================== Construct stand ================== #
-    points=$(if [[ $method == "orchard" ]]; then
+    
+    
+    [[ -f $TEMPDIR/ground.bin && ! $force ]] || make_ground $sizeN $sizeE 1 |
+    csv-paste "-;binary=3d,ui" "value=0;binary=ui" >$TEMPDIR/ground.bin
+    
+    
+    points=$(
         for x in $(seq 0 $spaceN $radN); do
             for y in $(seq 0 $spaceE $radE); do echo "$x,$y,0.1"; done
             for y in $(seq -$spaceE -$spaceE -$radE); do echo "$x,$y,0.1"; done
@@ -93,23 +140,72 @@ function go() {
             for y in $(seq 0 $spaceE $radE); do echo "$x,$y,0.1"; done
             for y in $(seq -$spaceE -$spaceE -$radE); do echo "$x,$y,0.1"; done
         done
-    elif [[ $method == "forest" ]]; then
-        echo "0,0,0"
-        error "Not yet implemented"
-    fi)
+    )
+    
+    echo $points | tr ' ' '\n'  | csv-paste - line-number | view-points "$TEMPDIR/ground.bin;binary=3d,2ui;colour=black" "-;fields=x,y,z,id;weight=20;"  --background-color=white
+    
+    
+}
 
+function go() {
+    ARBARO=$1
+    sizeN=$2
+    sizeE=$3
+    spaceN=$4
+    spaceE=$5
+    spaceM=$6
+    method=$7
+    maxH=$8
+    minH=$9
+    ref_frame=${10}
+    
+    radN=$(echo $sizeN | csv-eval --format=d --fields=x "x=x/2")
+    radE=$(echo $sizeE | csv-eval --format=d --fields=x "x=x/2")
+    
+    species=$($ARBARO | name-value-get "arbaro/species/<xmlattr>/name")
+    [[ $verbose ]] && echo Species: $species >&2
+    # ============ Generate trees in HD PC form ============ #
+    TREES="$TEMPDIR/${species}_trees"
+    
+    mkdir -p $TREES
+    
+    nTrees=$(echo $sizeN,$sizeE,$spaceN,$spaceE | csv-eval --fields=a,b,c,d "x=round((a/c)*(b/d)*2)" --format=4d | csv-shuffle --fields=,,,,x -o=x)
+    [[ $verbose ]] && echo "$nTrees trees needed" >&2
+    # Should XARGS this bit.
+    while [[ $(ls $TREES | grep "\.bin" | wc -l) -lt $nTrees ]]; do
+        for i in $(seq 8); do echo $RANDOM; done |
+        xargs -n1 -P8 -i bash -c "$(declare -f) ; generate_tree {} $ARBARO $TREES $maxH $minH $verbose"
+        [[ $verbose ]] && echo $(ls $TREES | grep "\.bin" | wc -l) "<?" $nTrees >&2
+    done
+    echo "" >&2
+    
+    [[ $verbose ]] && echo "$spaceN, $spaceE, $radN, $radE" >&2
+    
+    # ================== Construct stand ================== #
+    points=$(if [[ $method == "orchard" ]]; then
+            for x in $(seq 0 $spaceN $radN); do
+                for y in $(seq 0 $spaceE $radE); do echo "$x,$y,0.1"; done
+                for y in $(seq -$spaceE -$spaceE -$radE); do echo "$x,$y,0.1"; done
+            done
+            for x in $(seq -$spaceN -$spaceN -$radN); do
+                for y in $(seq 0 $spaceE $radE); do echo "$x,$y,0.1"; done
+                for y in $(seq -$spaceE -$spaceE -$radE); do echo "$x,$y,0.1"; done
+            done
+            elif [[ $method == "forest" ]]; then
+            make_forest_points $sizeN $sizeE $spaceM $verbose
+    fi)
+    
     [[ $verbose ]] && echo "POINTS" >&2
     [[ $verbose ]] && echo "$points" >&2
-
     files=$(find $TREES | grep "\.bin$" | shuf | csv-paste "-" line-number)
-
+    
     echo "trunk/x,trunk/y,trunk/z,id" >$TEMPDIR/trunks.csv
-
+    
     [[ -f $TEMPDIR/ground.bin && ! $force ]] || make_ground $sizeN $sizeE 0.01 |
-        csv-paste "-;binary=3d,ui" "value=0;binary=ui" >$TEMPDIR/ground.bin
-
+    csv-paste "-;binary=3d,ui" "value=0;binary=ui" >$TEMPDIR/ground.bin
+    
     [[ $verbose ]] && echo "Ground finished" >&2
-
+    
     for pt in $(echo $points | tr ' ' '\n' | csv-paste "-" line-number); do
         point=$(echo $pt | cut -d, -f1-3)
         idx=$(echo $pt | cut -d, -f4)
@@ -119,13 +215,13 @@ function go() {
         echo "$point,$seed" >>$TEMPDIR/trunks.csv
         [[ $verbose ]] && echo Tree $tree >&2
         cat $tree | points-frame --binary=3d,ui --fields=x,y,z,i --from "$point" |
-            csv-paste "-;binary=3d,ui" "value=$seed;binary=ui"
+        csv-paste "-;binary=3d,ui" "value=$seed;binary=ui"
     done |
-        cat $TEMPDIR/ground.bin - | #Now, just convert from NWU (generated) to TRAJ frame
-        # cat $TEMPDIR/ground.bin | #Now, just convert from NWU (generated) to TRAJ frame
-        points-frame --binary=3d,2ui --fields=x,y,z --from=$ref_frame
+    cat $TEMPDIR/ground.bin - | #Now, just convert from NWU (generated) to TRAJ frame
+    # cat $TEMPDIR/ground.bin | #Now, just convert from NWU (generated) to TRAJ frame
+    points-frame --binary=3d,2ui --fields=x,y,z --from=$ref_frame
     [[ $verbose ]] && echo "Stand constructed" >&2
-
+    cp $TEMPDIR/trunks.csv recent_trunks.csv
     [[ $verbose ]] && echo -e "\nView finished point cloud:" >&2
     [[ $verbose ]] && echo " | view-points --binary=3d,2ui --fields=x,y,z,scalar --colour=1:4,green:orange" >&2
 }
@@ -137,6 +233,7 @@ function option-description() {
 --size-east=[<length>]; default=38; number of metres to generate (East). (36)
 --spacing-north=[<length>]; default=10; [orchard] number of metres between trees (North)
 --spacing-east=[<length>]; default=6; [orchard] number of metres between trees (East)
+--spacing-min=[<length>]; default=4; [forest] minimum number of metres between trees
 --max-height=[<height>]; default=10; Maximum size (m) of generated trees
 --min-height=[<height>]; default=4; Maximum size (m) of generated trees
 --frame=[<frame>]; default="-1.5,5,0,0,0,$(math-deg2rad 95)"; Reference frame in which the trajectory is, relative to point cloud convention.
@@ -165,7 +262,7 @@ $(option-description | sed 's/^/    /g')
 
 eof
     exit 1
-
+    
 }
 
 if [ "$1" = "-parallel" ]; then
@@ -184,11 +281,16 @@ eval "$(option-description | comma-options-to-name-value "$@" | comma_path_value
 
 # set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
 
-export TEMPDIR="/home/fwes7558/data/gpc_temp"
+export TEMPDIR="/home/fred/data/gpc_temp"
 mkdir -p $TEMPDIR
 
+# if [ "$1" = "forest" ]; then
+#     testForest $options_arbaro $options_size_north $options_size_east $options_spacing_min $1 $options_max_height $options_min_height $options_frame
+# elif [ "$1" = "orchard" ]; then
+#     testOrchard $options_arbaro $options_size_north $options_size_east $options_spacing_north $options_spacing_east $1 $options_max_height $options_min_height $options_frame
+# el
 if [ "$1" = "orchard" -o "$1" = "forest" ]; then
-    go $options_arbaro $options_size_north $options_size_east $options_spacing_north $options_spacing_east $1 $options_max_height $options_min_height $options_frame
+    go $options_arbaro $options_size_north $options_size_east $options_spacing_north $options_spacing_east $options_spacing_min $1 $options_max_height $options_min_height $options_frame
 else
     error "Unknown operation \"$1\""
 fi

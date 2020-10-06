@@ -1,14 +1,19 @@
 # V-LiDAR: A system for generating virtual LiDAR data
 
-To install, you need [Comma](https://github.com/acfr/comma) and [Snark](https://github.com/acfr/snark) (by ACFR). The `install.sh` script may successfully install these, but no promises.
+## Installation:
+
+This library depends on  [Comma](https://github.com/acfr/comma) and [Snark](https://github.com/acfr/snark) (by ACFR).
 
 We include Arbaro for tree generation, presented [here](https://www2.cs.duke.edu/courses/cps124/spring08/assign/07_papers/p119-weber.pdf) and licensed under GNU General Public License version 2.0 (GPLv2).
 
-Currently this has only been tested on Ubuntu; it will install and run on WSL2 for Windows 10, but some features (namely visualisations) will fail.
+Included in the directory is an install.sh script which should install all dependencies correctly on a clean install of Ubuntu.  As of September 2019, this works on Ubuntu 20.04 running as a Windows Subsystem for Linux (WSL) 2, but the ACFR libraries are quite old, so may be subject to breaking changes.
 
-If everything worked correctly, `generate-pointcloud` is the main entry point function; it takes in some parameters and generates a point cloud by simulating a LiDAR trajectory.
+If you are running WSL, make sure to set up X display forwarding or graphics won't work.
 
-## Parameters:
+## Usage: 
+
+### generate-pointcloud:
+`generate-pointcloud` is the main entry point function; it takes in some parameters and generates a point cloud by simulating a LiDAR trajectory.
 
 `generate-pointcloud` is a script that requires some specific inputs...
 
