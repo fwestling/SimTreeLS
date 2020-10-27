@@ -1,0 +1,229 @@
+#!/bin/bash
+
+# Generate a point cloud using a virtual sensor, trajectory, and Arbaro definition.
+
+
+nme=`echo $1 | sed 's/\.bin//'`
+method=$2
+subset=$3
+threshold=${4:-5000}
+
+resolution=0.05
+origin=-50,-50,-50
+
+if [[ -f $nme.bin ]]
+then
+    echo "Using file $nme.bin" >&2
+else
+    echo "Name '$nme' not recognised; make sure you're in the data directory and the name is one of the following:" >&2
+    ls *.bin >&2
+fi
+
+# Generating control
+if [[ $method == "control" ]]
+then
+    ref_frame="-1.5,5,0,0,0,$(math-deg2rad 95)"
+    pv $nme.bin | csv-thin --binary=3d,2ui 0.02 | points-frame --binary=3d,2ui --fields=x,y,z --to=$ref_frame |  points-frame --binary=3d,2ui --fields=x,y,z --to="0,0,0,$(math-deg2rad 180),0,0" > control/$nme.bin
+    # elif [[ $method == "vox" ]]
+    # then
+    #     ref_frame="-1.5,5,0,0,0,$(math-deg2rad 95)"
+    #     pv $nme.bin |
+    #         csv-select --binary=3d,2ui --fields=x,y,z,,id "id;greater=0" | # ignore ground
+    #         points-frame --binary=3d,2ui --fields=x,y,z --to=$ref_frame |
+    #         points-frame --binary=3d,2ui --fields=x,y,z --to="0,0,0,$(math-deg2rad 180),0,0" |
+    #         points-to-voxels --binary=3d,2ui --fields=x,y,z --resolution=0.01 --origin=-50,-50,-50 > vox/${nme}.bin
+    
+elif [[ $method == "occlusion" ]]
+then
+    ref_frame="-1.5,5,0,0,0,$(math-deg2rad 95)"
+    if [[ -d $subset ]]
+    then
+        echo "Using $subset/$nme.bin" >&2
+    else
+        echo "Subset '$subset' not recognised; should be one of the following:" >&2
+        ls --hide=*bin >&2
+    fi
+    #  Re-enable when method is complete
+    rm -rf temp/
+    mkdir -p temp
+    
+    # Find only the IDs which are significantly present.
+    cat $subset/$nme.bin |
+    csv-select --binary=3d,2ui --fields=x,y,z,,id "id;greater=0" | # ignore ground
+    csv-calc size --binary=3d,2ui --fields=x,,,,id | csv-select --binary=2ui --fields=s,i "s;greater=$threshold" |
+    csv-shuffle -b=2ui -f=,i -o=i > temp/ids.bin
+    
+    echo "Number of trees kept using threshold $threshold: " $(cat temp/ids.bin | csv-from-bin ui | wc -l) >&2
+    #  ==== Process the subset ==== #
+    # Get only the relevant trees from the subset
+    [[ -s temp/$subset.bin ]] || pv $subset/$nme.bin |
+    csv-join --binary=3d,2ui --fields=,,,,id "temp/ids.bin;binary=ui;fields=id" |
+    points-to-voxels --binary=3d,3ui --fields=x,y,z --resolution=$resolution --origin=$origin |
+    csv-shuffle -b=3ui,3d,ui -f=i,j,k,x,y,z -o=x,y,z > temp/$subset.bin
+    # view-points --binary=3d,3ui --fields=x,y,z,scalar,id --colour=-1:5,jet --background-color=white
+    # Set the radius to the sensor error plus noise? Or how else can you possibly find the occlusion without assigning an ID?
+    echo "IDs selected" >&2
+    rad=0.05 # Enough to corner the voxels
+    [[ -s  temp/vox_$nme.bin ]] || cat $nme.bin | csv-join --binary=3d,2ui --fields=,,,,id "temp/ids.bin;binary=ui;fields=id" |
+    csv-shuffle -b=3d,3ui -f=x,y,z -o=x,y,z |
+    points-frame --binary=3d --fields=x,y,z --to=$ref_frame |
+    points-frame --binary=3d --fields=x,y,z --to="0,0,0,$(math-deg2rad 180),0,0" |
+    points-to-voxels --binary=3d --fields=x,y,z --resolution=$resolution --origin=$origin |
+    csv-shuffle -b=3ui,3d,ui -f=i,j,k,x,y,z -o=x,y,z > temp/vox_$nme.bin
+    echo "Built temp/vox_$nme.bin" >&2
+    cat temp/vox_$nme.bin | points-join  --binary=3d --fields=x,y,z "temp/$subset.bin;binary=3d;fields=x,y,z" --matching --radius=$rad |
+    csv-paste "-;binary=3d" "value=1;binary=ui" > temp/occlusions_$subset.bin
+    echo "Matching points found" >&2
+    cat temp/vox_$nme.bin |
+    points-join  --binary=3d --fields=x,y,z "temp/$subset.bin;binary=3d;fields=x,y,z" --not-matching --radius=$rad |
+    csv-paste "-;binary=3d" "value=0;binary=ui" >> temp/occlusions_$subset.bin
+    echo "Non-matching points found" >&2
+    
+    
+    # #  ==== Now process the control ==== #
+    # Get only the relevant trees from the subset
+    [[ -s temp/control.bin ]] || pv control/$nme.bin |
+    csv-join --binary=3d,2ui --fields=,,,,id "temp/ids.bin;binary=ui;fields=id" |
+    points-to-voxels --binary=3d,3ui --fields=x,y,z --resolution=$resolution --origin=$origin |
+    csv-shuffle -b=3ui,3d,ui -f=i,j,k,x,y,z -o=x,y,z > temp/control.bin
+    # view-points --binary=3d,3ui --fields=x,y,z,scalar,id --colour=-1:5,jet --background-color=white
+    # Set the radius to the sensor error plus noise? Or how else can you possibly find the occlusion without assigning an ID?
+    echo "IDs selected" >&2
+    cat temp/vox_$nme.bin | points-join  --binary=3d --fields=x,y,z "temp/control.bin;binary=3d;fields=x,y,z" --matching --radius=$rad |
+    csv-paste "-;binary=3d" "value=1;binary=ui" > temp/occlusions_control.bin
+    echo "Matching points found" >&2
+    cat temp/vox_$nme.bin |
+    points-join  --binary=3d --fields=x,y,z "temp/control.bin;binary=3d;fields=x,y,z" --not-matching --radius=$rad |
+    csv-paste "-;binary=3d" "value=0;binary=ui" >> temp/occlusions_control.bin
+    echo "Non-matching points found" >&2
+    
+    mkdir -p $subset/occlusions
+    cp temp/occlusions_$subset.bin $subset/occlusions/$nme.bin
+    cp temp/occlusions_control.bin $subset/occlusions/${nme}-control.bin
+    # view-points temp/occlusions_*.bin --binary=3d,ui --fields=x,y,z,scalar --colour=0:1,red:green
+    
+elif [[ $method == "density" ]]
+then
+    # To find density of a region of the tree, voxelise at a particular resolution and divide the weight by the voxel size.
+    vs=0.1
+    vol=$(echo "1/($vs*$vs*$vs)" | bc -l)
+    if [[ -d $subset ]]
+    then
+        echo "Using $subset/$nme.bin" >&2
+    else
+        echo "Subset '$subset' not recognised; should be one of the following:" >&2
+        ls --hide=*bin >&2
+    fi
+    
+    echo "vol=$vol" >&2
+    mkdir -p $subset/density
+    cat $subset/$nme.bin |
+    csv-select --binary=3d,2ui --fields=x,y,z,,id "id;greater=0" | # ignore ground
+    points-to-voxels --binary=3d,2ui --fields=x,y,z --resolution=$vs --origin=$origin |
+    csv-shuffle -b=3ui,3d,ui -f=i,j,k,x,y,z,w -o=x,y,z,w |
+    csv-eval --binary=3d,ui --fields=x,y,z,w "dens=w*$vol" --output-format=d > $subset/density/${nme}.bin
+    
+    # === View results === #
+    minmaxav=$(cat $subset/density/${nme}.bin | csv-calc percentile=0.05,percentile=0.95,mean --binary=3d,ui,d --fields=,,,,d | csv-from-bin 3d)
+    echo minmaxav: $minmaxav ";" --colour=$(echo $minmaxav | cut -f1 -d,):$(echo $minmaxav | cut -f2 -d,) >&2
+    view-points $subset/density/${nme}.bin --binary=3d,ui,d --fields=x,y,z,,scalar --colour=$(echo $minmaxav | cut -f1 -d,):$(echo $minmaxav | cut -f2 -d,),jet --background-colour=white
+elif [[ $method == "process-density" ]]
+then
+    vs=0.1
+    if [[ -d $subset ]]
+    then
+        echo "Using $subset/$nme.bin" >&2
+    else
+        echo "Subset '$subset' not recognised; should be one of the following:" >&2
+        ls --hide=*bin >&2
+    fi
+    echo "============================"
+    echo " Average density and stdev:"  >&2
+    cat $subset/density/${nme}.bin | csv-calc mean,stddev --binary=3d,ui,d --fields=,,,,d | csv-from-bin d
+    echo "============================"
+    
+    pt=$(cat $subset/density/${nme}.bin | csv-calc mean --binary=3d,ui,d --fields=x,y,z | csv-from-bin 3d)
+    ptX=$(echo $pt | cut -d, -f1)
+    ptY=$(echo $pt | cut -d, -f2)
+    
+    cat $subset/density/${nme}.bin |
+    csv-eval --binary=3d,ui,d --fields=x,y,z,w,d "r=sqrt((x-$ptX)*(x-$ptX)+(y-$ptY)*(y-$ptY));h=-z" --output-format=2d |
+    csv-shuffle -b=3d,ui,d,2d -f=x,y,z,w,d,r,h -o=r,h,d |
+    csv-eval --binary=3d --fields=r,h,d "dr=ceil(r/$vs);dh=ceil(h/$vs)" --output-format=2ui |
+    csv-calc mean --binary=3d,2ui --fields=,,d,id |
+    csv-sort --fields=,b --binary=d,ui | csv-eval --binary=d,ui -f=,i "o=i*$vs" --output-format=d |
+    csv-shuffle -b=d,ui,d -f=d,,x -o=x,d | csv-from-bin 2d > $subset/density/${nme}_R.csv
+    
+    cat $subset/density/${nme}.bin |
+    csv-eval --binary=3d,ui,d --fields=x,y,z,w,d "r=sqrt((x-$ptX)*(x-$ptX)+(y-$ptY)*(y-$ptY));h=-z" --output-format=2d |
+    csv-shuffle -b=3d,ui,d,2d -f=x,y,z,w,d,r,h -o=r,h,d |
+    csv-eval --binary=3d --fields=r,h,d "dr=ceil(r/$vs);dh=ceil(h/$vs)" --output-format=2ui |
+    csv-calc mean --binary=3d,2ui --fields=,,d,,id |
+    csv-sort --fields=,b --binary=d,ui | csv-eval --binary=d,ui -f=,i "o=i*$vs" --output-format=d |
+    csv-shuffle -b=d,ui,d -f=d,,x -o=x,d | csv-from-bin 2d > $subset/density/${nme}_H.csv
+    
+    
+elif [[ $method == "process-occlusion" ]]
+then
+    vs=0.1
+    
+    ref_frame="-1.5,5,0,0,0,$(math-deg2rad 95)"
+    if [[ -d $subset ]]
+    then
+        echo "Using $subset/$nme.bin" >&2
+    else
+        echo "Subset '$subset' not recognised; should be one of the following:" >&2
+        ls --hide=*bin >&2
+    fi
+    
+    occ=$(cat $subset/occlusions/${nme}.bin | csv-cast 3d,ui 4d --force | csv-calc mean --binary=4d --fields=,,,d | csv-from-bin d)
+    echo "=================================================="
+    echo " Average occlusion: $occ"  >&2
+    echo "=================================================="
+    
+    
+    
+    pt=$(cat $subset/occlusions/${nme}.bin | csv-calc mean --binary=3d,ui --fields=x,y,z | csv-from-bin 3d)
+    ptX=$(echo $pt | cut -d, -f1)
+    ptY=$(echo $pt | cut -d, -f2)
+    
+    cat $subset/occlusions/${nme}.bin | csv-eval --binary=3d,ui --fields=x,y,z,flag "d=flag" --output-format=d |
+    csv-eval --binary=3d,ui,d --fields=x,y,z,w,d "r=sqrt((x-$ptX)*(x-$ptX)+(y-$ptY)*(y-$ptY));h=-z" --output-format=2d |
+    csv-shuffle -b=3d,ui,d,2d -f=x,y,z,w,d,r,h -o=r,h,d |
+    csv-eval --binary=3d --fields=r,h,d "dr=ceil(r/$vs);dh=ceil(h/$vs)" --output-format=2ui |
+    csv-calc mean --binary=3d,2ui --fields=,,d,id |
+    csv-sort --fields=,b --binary=d,ui | csv-eval --binary=d,ui -f=,i "o=i*$vs" --output-format=d |
+    csv-shuffle -b=d,ui,d -f=d,,x -o=x,d | csv-from-bin 2d > $subset/occlusions/${nme}_R.csv
+    
+    
+    cat $subset/occlusions/${nme}.bin | csv-eval --binary=3d,ui --fields=x,y,z,flag "d=flag" --output-format=d |
+    csv-eval --binary=3d,ui,d --fields=x,y,z,w,d "r=sqrt((x-$ptX)*(x-$ptX)+(y-$ptY)*(y-$ptY));h=-z" --output-format=2d |
+    csv-shuffle -b=3d,ui,d,2d -f=x,y,z,w,d,r,h -o=r,h,d |
+    csv-eval --binary=3d --fields=r,h,d "dr=ceil(r/$vs);dh=ceil(h/$vs)" --output-format=2ui |
+    csv-calc mean --binary=3d,2ui --fields=,,d,,id |
+    csv-sort --fields=,b --binary=d,ui | csv-eval --binary=d,ui -f=,i "o=i*$vs" --output-format=d |
+    csv-shuffle -b=d,ui,d -f=d,,x -o=x,d | csv-from-bin 2d > $subset/occlusions/${nme}_H.csv
+    
+    
+elif [[ $method == "obj" ]]
+then
+    seed=28042
+    ARBARO=avocado_xml
+    
+    mkdir -p temp
+    OBJ=temp/$seed.obj
+    BIN=temp/$seed.bin
+    density=5000
+    
+    [[ $verbose ]] && echo "..Generating $OBJ" >&2
+    # $ARBARO | java -jar $(dirname "${BASH_SOURCE[0]}")/arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q #2>/dev/null
+    $ARBARO | java -jar arbaro_cmd.jar --seed $seed -f OBJ -o $OBJ -q 2>/dev/null
+    # echo "$OBJ" >&2
+    csv-from-obj $OBJ --density=$density | csv-shuffle -b=ui,4d -f=id,x,y,z,area -o=x,y,z,id |
+    points-frame --from "0,0,0,$(math-deg2rad 90),0,$(math-deg2rad 90)" --binary=3d,ui --fields=x,y,z | #this ends us up in NWU frame, but I guess I don't really care; easy to fix later.
+    csv-select --binary=3d,ui --fields=x,y,z "z;greater=0" >$BIN
+    echo "Done!" >&2
+    
+else
+    echo "Method '$method' not recognised; should be 'control', 'vox', 'occlusion', 'process-occlusion', or 'density'" >&2
+fi

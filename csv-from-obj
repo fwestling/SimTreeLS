@@ -8,30 +8,30 @@ export readonly name=$(basename $0)
 source $(type -p comma-application-util) || (error "comma not installed")
 function errcho() { (echo >&2 "$name: $1"); }
 function error() {
-	errcho "error: $1"
-	exit 1
+    errcho "error: $1"
+    exit 1
 }
 
 function go() {
-	local INFILE=$1
-	local density=$2
-
-	[[ $verbose ]] && echo "Density: $density" >&2
-
-	obj-to-tri $INFILE | triangle-area |
-		csv-eval --binary=ui,9d,d --fields=,,,,,,,,,,area "npts=area*$density + 0.5" --output-format=ui |
-		# csv-paste "-;binary=ui,9d,d,ui,2d" "line-number;binary=ui" | tee ~/data/testbed/vlidar/temp.b |
-		# csv-eval --binary=ui,9d,d,ui,2d,ui --fields=i,,,,,,,,,,,,,l "i=l" |
-		# csv-shuffle -b=ui,9d,d,ui,2d,ui -f=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n -o=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n | tee ~/data/testbed/vlidar/temp.r |
-		csv-replicate |
-		csv-random |
-		# We now have one line per new point - all we have to do is compute the new coordinates using rand...
-		csv-eval --binary=ui,9d,d,ui,2d --fields=,fx,fy,fz,sx,sy,sz,tx,ty,tz,,,a,b \
-			"sa=sqrt(a);sb=sqrt(b);\
+    local INFILE=$1
+    local density=$2
+    
+    [[ $verbose ]] && echo "Density: $density" >&2
+    
+    obj-to-tri $INFILE | triangle-area |
+    csv-eval --binary=ui,9d,d --fields=,,,,,,,,,,area "npts=area*$density + 0.5" --output-format=ui |
+    # csv-paste "-;binary=ui,9d,d,ui,2d" "line-number;binary=ui" | tee ~/data/testbed/vlidar/temp.b |
+    # csv-eval --binary=ui,9d,d,ui,2d,ui --fields=i,,,,,,,,,,,,,l "i=l" |
+    # csv-shuffle -b=ui,9d,d,ui,2d,ui -f=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n -o=i,fx,fy,fz,sx,sy,sz,tx,ty,tz,a,n | tee ~/data/testbed/vlidar/temp.r |
+    csv-replicate |
+    csv-random |
+    # We now have one line per new point - all we have to do is compute the new coordinates using rand...
+    csv-eval --binary=ui,9d,d,ui,2d --fields=,fx,fy,fz,sx,sy,sz,tx,ty,tz,,,a,b \
+    "sa=sqrt(a);sb=sqrt(b);\
 		x=(1-sa)*fx + (sa*(1-b)) * sx + b * sa * tx;\
 		y=(1-sa)*fy + (sa*(1-b)) * sy + b * sa * ty;\
-		z=(1-sa)*fz + (sa*(1-b)) * sz + b * sa * tz" --output-format 3d --output-fields=x,y,z |
-		csv-shuffle -b=ui,9d,d,ui,2d,3d -f=id,,,,,,,,,,a,n,r1,r2,x,y,z -o=id,x,y,z,a
+    z=(1-sa)*fz + (sa*(1-b)) * sz + b * sa * tz" --output-format 3d --output-fields=x,y,z |
+    csv-shuffle -b=ui,9d,d,ui,2d,3d -f=id,,,,,,,,,,a,n,r1,r2,x,y,z -o=id,x,y,z,a
 }
 
 function option-description() {
@@ -56,14 +56,14 @@ options:
 $(option-description | sed 's/^/    /g')
 
 eof
-	exit 1
-
+    exit 1
+    
 }
 
 if [ "$1" = "-parallel" ]; then
-	shift 1
-	sample_sensor "$@"
-	exit $?
+    shift 1
+    sample_sensor "$@"
+    exit $?
 fi
 
 if (($(comma_options_has --help $@) || $(comma_options_has -h $@))); then usage; fi

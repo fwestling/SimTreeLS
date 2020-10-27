@@ -12,7 +12,7 @@ function error() {
 }
 
 function open_viewer() {
-
+    
     if [[ $sample ]]; then
         obj-to-tri $1 >temp_a.bin
         csv-from-obj $1 --density=$2 >temp_b.bin
@@ -20,9 +20,9 @@ function open_viewer() {
         rm temp_a.bin temp_b.bin
     else
         obj-to-tri $1 |
-            view-points --binary=ui,9d --shape=triangle --fields=id,corners
+        view-points --binary=ui,9d --shape=triangle --fields=id,corners --background-colour=white
     fi
-
+    
 }
 
 # function convert() {
@@ -91,7 +91,7 @@ $(option-description | sed 's/^/    /g')
 
 eof
     exit 1
-
+    
 }
 
 if [ "$1" = "-parallel" ]; then
