@@ -10,12 +10,12 @@ else
     #  The zeb1 scans at 43000 points per second, 270 degrees at a 0.625 degree interval
     # So that's 432 points per scan, 1000 scans per second
     # So, it should scan 1k times in 2m, so one scan every 2/1000 metres
-
+    
     spacing=0.002
     # spacing=0.5
-
+    
     i=0
-
+    
     # echo -en "Generating trajectory..."
     for x in $(seq -30 0.05 -20); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
@@ -23,63 +23,63 @@ else
         i=$(expr $i + 3)
     done | tee temp_drone.traj
     # echo -en "."
-
+    
     for x in $(seq -20 $spacing 20); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
         i=$(expr $i + 3)
         echo "$ts,$x,-1,$z,$q"
     done  | tee -a temp_drone.traj
-
+    
     # echo -en "."
-
+    
     for x in $(seq 20 0.1 30); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
         i=$(expr $i + 3)
         echo "$ts,$x,-1,$z,$q"
     done  | tee -a temp_drone.traj
-
+    
     # echo -en "."
-
+    
     for y in $(seq -1 $spacing 10); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
         i=$(expr $i + 3)
         echo "$ts,30,$y,$z,$q"
     done  | tee -a temp_drone.traj
-
+    
     # echo -en "."
-
+    
     # echo -en "."
-
+    
     for x in $(seq 30 -0.1 20); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
         i=$(expr $i + 3)
         echo "$ts,$x,10,$z,$q"
     done  | tee -a temp_drone.traj
-
+    
     for x in $(seq 20 -$spacing -20); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
         i=$(expr $i + 3)
         echo "$ts,$x,10,$z,$q"
     done  | tee -a temp_drone.traj
     # echo -en "."
-
+    
     for x in $(seq -20 -0.1 -30); do
         q=$(echo "0.001,-89.999,$i" | math-deg2rad --fields=a,b,c | math-eigen rotation --from=euler --to=quaternion | cut -d, -f4-)
         i=$(expr $i + 3)
         echo "$ts,$x,10,$z,$q"
     done  | tee -a temp_drone.traj
-
-# echo "Finished!"
-
-# size=$(cat $SENSOR | csv-from-bin ui,7d | wc -l)
-
-# cat $output |
-#     math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
-#     csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=x,y,z,roll,pitch,yaw |
-#     # csv-play --interactive |
-#     while read frame; do
-#         cat $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
-#             points-frame --binary=ui,7d --from=$frame --fields=,,,,,x,y,z
-#     done |
-#     view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$output;fields=,x,y,z;colour=red;weight=10"
+    
+    # echo "Finished!"
+    
+    # size=$(cat $SENSOR | csv-from-bin ui,7d | wc -l)
+    
+    # cat $output |
+    #     math-eigen rotation --from=quaternion --to=euler --fields=,,,,w,x,y,z |
+    #     csv-shuffle --fields=t,x,y,z,qx,qy,qz,qw,roll,pitch,yaw --output-fields=x,y,z,roll,pitch,yaw |
+    #     # csv-play --interactive |
+    #     while read frame; do
+    #         cat $SENSOR | points-frame --binary=ui,7d --from=$frame --fields=,,x,y,z |
+    #             points-frame --binary=ui,7d --from=$frame --fields=,,,,,x,y,z
+    #     done |
+    #     view-points "-;binary=ui,7d;fields=,scalar,first,second;shape=line;colour=0:15,jet;size=$size" "$output;fields=,x,y,z;colour=red;weight=10"
 fi

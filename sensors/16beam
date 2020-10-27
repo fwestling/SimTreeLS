@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Angular resolution
+ares=0.625
+# FOV
+fov=270
+f2=$(echo $fov / 2 | bc)
+
+# Range for up/down scan planes
+vfov=45
+v2=$(echo $vfov / 2 | bc)
+# Vertical angular resolution
+vares=5
+
+# Distance error
+de=0.03
+# range (this should be actual range - de)
+r=14.97
+# minimum range 
+mr=0.9
+
+# i is an integer count of tshaphe angular resolution
+i=0
+for pitch in $(seq -$v2 $vares $v2); do
+    for ang in $(seq -$f2 $ares $f2); do
+        i=$(expr $i + 1)
+        # ran is the distance from 0,0
+        for ran in $(seq $mr $de $r); do
+            echo "$i,$ran,$pitch,$ang"
+        done
+    done 
+done | csv-to-bin ui,3d | 
+ math-deg2rad --fields=,,a,b --binary=ui,3d |
+ csv-eval --binary=ui,3d --fields=i,r,p,a "xa=cos(a)*r;ya=sin(a)*r;za=tan(p)*r;xb=cos(a)*(r+$de);yb=sin(a)*(r+$de);zb=tan(p)*(r+$de)" --output-format=6d |
+    csv-shuffle -b=ui,3d,6d -f=i,r,p,a,xa,ya,za,xb,yb,zb -o=i,r,xa,ya,za,xb,yb,zb
