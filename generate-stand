@@ -56,7 +56,7 @@ function make_forest_points() {
     space=$3
     vb=$4
     
-    nTrees=$(echo "( $sizeN * $sizeE ) / ( $space * $space * 1.42 )" | bc)
+    nTrees=$(echo "( $sizeN * $sizeE ) / ( $space * $space * 1.42)" | bc)
     radN=$(echo "( $sizeN / 2 )" | bc -l)
     radE=$(echo "( $sizeE / 2 )" | bc -l)
     [[ $vb ]] && echo nTrees = $nTrees >&2
@@ -159,6 +159,8 @@ function go() {
     minH=$9
     ref_frame=${10}
     
+    # echo "Min spacing = $spaceM" >&2
+    # exit
     radN=$(echo $sizeN | csv-eval --format=d --fields=x "x=x/2")
     radE=$(echo $sizeE | csv-eval --format=d --fields=x "x=x/2")
     
@@ -169,7 +171,14 @@ function go() {
     
     mkdir -p $TREES
     
+    if [[ $method == "orchard" ]]
+    then
     nTrees=$(echo $sizeN,$sizeE,$spaceN,$spaceE | csv-eval --fields=a,b,c,d "x=round((a/c)*(b/d)*2)" --format=4d | csv-shuffle --fields=,,,,x -o=x)
+elif [[ $method == "forest" ]]  
+        nTrees=$(echo "( $sizeN * $sizeE ) / ( $space * $space * 1.42)" | bc)
+else 
+    error "Unknown method $method"
+fi
     [[ $verbose ]] && echo "$nTrees trees needed" >&2
     # Should XARGS this bit.
     while [[ $(ls $TREES | grep "\.bin" | wc -l) -lt $nTrees ]]; do
@@ -281,7 +290,7 @@ eval "$(option-description | comma-options-to-name-value "$@" | comma_path_value
 
 # set -e # Kill if anything errors out; we don't want it to run everything on bad datasets
 
-export TEMPDIR="/home/fred/data/gpc_temp"
+export TEMPDIR="/home/fwes7558/data/gpc_temp"
 mkdir -p $TEMPDIR
 
 # if [ "$1" = "forest" ]; then
